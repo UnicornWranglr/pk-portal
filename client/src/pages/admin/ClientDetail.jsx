@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../../api';
 
-const typeColors = { standard: 'bg-blue-100 text-blue-700', kingdom: 'bg-purple-100 text-purple-700', gpu: 'bg-amber-100 text-amber-700' };
-const statusColors = { active: 'bg-green-100 text-green-700', pending_removal: 'bg-yellow-100 text-yellow-700', removed: 'bg-red-100 text-red-700' };
+const typeColors = { standard: 'bg-blue-100 text-blue-700', gpu: 'bg-amber-100 text-amber-700' };
+const statusColors = { active: 'bg-green-100 text-green-700', paused: 'bg-gray-200 text-gray-600', pending_removal: 'bg-yellow-100 text-yellow-700', removed: 'bg-red-100 text-red-700' };
 
 export default function ClientDetail() {
   const { id } = useParams();
@@ -19,6 +19,9 @@ export default function ClientDetail() {
   const [billingForm, setBillingForm] = useState({ period_start: '', period_end: '' });
   const [selectedPeriod, setSelectedPeriod] = useState(null);
   const [newProjectName, setNewProjectName] = useState('');
+  const [kingdomModal, setKingdomModal] = useState(null); // { userId, userName }
+  const [kingdomMonth, setKingdomMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [kingdomDays, setKingdomDays] = useState([]);
 
   useEffect(() => { load(); }, [id]);
 
@@ -58,6 +61,7 @@ export default function ClientDetail() {
       status: user.status,
       end_date: user.end_date || '',
       requires_office_license: user.requires_office_license || false,
+      kingdom_license: user.kingdom_license || false,
       project_id: user.project_id || '',
     });
   }
@@ -87,10 +91,94 @@ export default function ClientDetail() {
     load();
   }
 
+  // Kingdom usage calendar
+  async function openKingdomModal(user) {
+    setKingdomModal({ userId: user.id, userName: user.display_name });
+    await loadKingdomDays(user.id, kingdomMonth);
+  }
+
+  async function loadKingdomDays(userId, month) {
+    const days = await api.get(`/admin/users/${userId}/kingdom-usage?month=${month}`);
+    setKingdomDays(days);
+  }
+
+  async function toggleKingdomDay(date) {
+    const exists = kingdomDays.some(d => d.usage_date === date || d.usage_date?.slice(0, 10) === date);
+    await api.put(`/admin/users/${kingdomModal.userId}/kingdom-usage`, { date, active: !exists });
+    await loadKingdomDays(kingdomModal.userId, kingdomMonth);
+  }
+
+  function changeKingdomMonth(delta) {
+    const d = new Date(kingdomMonth + '-01');
+    d.setMonth(d.getMonth() + delta);
+    const newMonth = d.toISOString().slice(0, 7);
+    setKingdomMonth(newMonth);
+    loadKingdomDays(kingdomModal.userId, newMonth);
+  }
+
+  function renderCalendar() {
+    const year = parseInt(kingdomMonth.slice(0, 4));
+    const month = parseInt(kingdomMonth.slice(5, 7)) - 1;
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
+    const daySet = new Set(kingdomDays.map(d => (d.usage_date?.slice ? d.usage_date.slice(0, 10) : d.usage_date)));
+    const today = new Date().toISOString().slice(0, 10);
+
+    const cells = [];
+    // Empty cells for offset
+    for (let i = 0; i < firstDay; i++) cells.push(<div key={`e${i}`} />);
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const isActive = daySet.has(dateStr);
+      const isToday = dateStr === today;
+      cells.push(
+        <button key={day} onClick={() => toggleKingdomDay(dateStr)}
+          className={`h-9 w-9 rounded text-sm font-medium transition-colors
+            ${isActive ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}
+            ${isToday ? 'ring-2 ring-purple-400' : ''}`}>
+          {day}
+        </button>
+      );
+    }
+    return cells;
+  }
+
   if (!client) return <p>Loading...</p>;
 
   return (
     <div>
+      {/* Kingdom Usage Modal */}
+      {kingdomModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-[420px]">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold">Kingdom Usage — {kingdomModal.userName}</h3>
+              <button onClick={() => setKingdomModal(null)} className="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
+            </div>
+            <div className="flex items-center justify-between mb-3">
+              <button onClick={() => changeKingdomMonth(-1)} className="text-sm text-gray-500 hover:text-gray-700">&larr; Prev</button>
+              <span className="font-medium">{new Date(kingdomMonth + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</span>
+              <button onClick={() => changeKingdomMonth(1)} className="text-sm text-gray-500 hover:text-gray-700">Next &rarr;</button>
+            </div>
+            <div className="grid grid-cols-7 gap-1 text-center mb-2">
+              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+                <div key={d} className="text-xs text-gray-400 font-medium py-1">{d}</div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {renderCalendar()}
+            </div>
+            <div className="mt-4 flex justify-between items-center">
+              <p className="text-sm text-gray-500">
+                <span className="font-medium text-purple-600">{kingdomDays.length}</span> usage day{kingdomDays.length !== 1 ? 's' : ''} this month
+              </p>
+              <span className="text-xs text-gray-400">Click days to toggle</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Client header */}
       <div className="mb-6">
         <Link to="/admin/clients" className="text-sm text-blue-600 hover:underline">&larr; All Clients</Link>
@@ -149,12 +237,12 @@ export default function ClientDetail() {
                 <th className="text-left px-4 py-3 font-medium">Name</th>
                 <th className="text-left px-4 py-3 font-medium">Email</th>
                 <th className="text-left px-4 py-3 font-medium">Type</th>
+                <th className="text-left px-4 py-3 font-medium">Kingdom</th>
                 <th className="text-left px-4 py-3 font-medium">Status</th>
                 <th className="text-left px-4 py-3 font-medium">Project</th>
                 <th className="text-left px-4 py-3 font-medium">Office</th>
                 <th className="text-left px-4 py-3 font-medium">Added</th>
-                <th className="text-left px-4 py-3 font-medium">End Date</th>
-                <th className="text-left px-4 py-3 font-medium w-16"></th>
+                <th className="text-left px-4 py-3 font-medium w-20"></th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -165,13 +253,16 @@ export default function ClientDetail() {
                   <td className="px-4 py-2">
                     <select value={userForm.user_type} onChange={e => setUserForm({ ...userForm, user_type: e.target.value })} className="border rounded px-2 py-1 text-sm">
                       <option value="standard">Standard</option>
-                      <option value="kingdom">Kingdom</option>
                       <option value="gpu">GPU</option>
                     </select>
+                  </td>
+                  <td className="px-4 py-2 text-center">
+                    <input type="checkbox" checked={userForm.kingdom_license} onChange={e => setUserForm({ ...userForm, kingdom_license: e.target.checked })} />
                   </td>
                   <td className="px-4 py-2">
                     <select value={userForm.status} onChange={e => setUserForm({ ...userForm, status: e.target.value })} className="border rounded px-2 py-1 text-sm">
                       <option value="active">Active</option>
+                      <option value="paused">Paused</option>
                       <option value="pending_removal">Pending Removal</option>
                       <option value="removed">Removed</option>
                     </select>
@@ -186,7 +277,6 @@ export default function ClientDetail() {
                     <input type="checkbox" checked={userForm.requires_office_license} onChange={e => setUserForm({ ...userForm, requires_office_license: e.target.checked })} />
                   </td>
                   <td className="px-4 py-2 text-gray-500 text-xs">{u.added_date}</td>
-                  <td className="px-4 py-2"><input type="date" value={userForm.end_date} onChange={e => setUserForm({ ...userForm, end_date: e.target.value })} className="border rounded px-2 py-1 text-xs" /></td>
                   <td className="px-4 py-2">
                     <div className="flex gap-1">
                       <button onClick={saveUser} className="text-green-600 hover:text-green-800 text-xs font-medium">Save</button>
@@ -197,13 +287,21 @@ export default function ClientDetail() {
               ) : (
                 <tr key={u.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium">{u.display_name}</td>
-                  <td className="px-4 py-3 text-gray-600">{u.email}</td>
-                  <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${typeColors[u.user_type]}`}>{u.user_type}</span></td>
+                  <td className="px-4 py-3 text-gray-600 text-xs">{u.email}</td>
+                  <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${typeColors[u.user_type] || 'bg-gray-100'}`}>{u.user_type}</span></td>
+                  <td className="px-4 py-3">
+                    {u.kingdom_license ? (
+                      <button onClick={() => openKingdomModal(u)} className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700 hover:bg-purple-200">
+                        Kingdom
+                      </button>
+                    ) : (
+                      <span className="text-gray-300 text-xs">—</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[u.status]}`}>{u.status}</span></td>
                   <td className="px-4 py-3 text-gray-600 text-xs">{u.project_name || '—'}</td>
                   <td className="px-4 py-3">{u.requires_office_license ? <span className="text-green-600 text-xs font-medium">Yes</span> : <span className="text-gray-400 text-xs">No</span>}</td>
                   <td className="px-4 py-3 text-gray-500 text-xs">{u.added_date}</td>
-                  <td className="px-4 py-3 text-gray-500 text-xs">{u.end_date || '—'}</td>
                   <td className="px-4 py-3">
                     <button onClick={() => startEditUser(u)} className="text-blue-600 hover:text-blue-800 text-xs">Edit</button>
                   </td>
@@ -286,9 +384,17 @@ export default function ClientDetail() {
                 <tbody className="divide-y">
                   {(selectedPeriod.line_items || []).map((item, i) => (
                     <tr key={i}>
-                      <td className="px-4 py-2">{item.display_name}</td>
+                      <td className="px-4 py-2">
+                        {item.display_name}
+                        {item.kingdom_license && <span className="ml-1 text-xs text-purple-600">[K]</span>}
+                      </td>
                       <td className="px-4 py-2"><span className={`px-2 py-0.5 rounded text-xs font-medium ${typeColors[item.user_type]}`}>{item.user_type}</span></td>
-                      <td className="px-4 py-2">{item.days_active}</td>
+                      <td className="px-4 py-2">
+                        {item.days_active}
+                        {item.kingdom_usage_days !== undefined && item.kingdom_usage_days > 0 && (
+                          <span className="text-purple-600 text-xs ml-1">({item.kingdom_usage_days}K)</span>
+                        )}
+                      </td>
                       <td className="px-4 py-2">&pound;{(item.charges.standard || item.charges.gpu || 0).toFixed(2)}</td>
                       <td className="px-4 py-2">{item.charges.kingdom_addon ? `\u00A3${item.charges.kingdom_addon.toFixed(2)}` : '—'}</td>
                       <td className="px-4 py-2">{item.charges.setup_fee ? `\u00A3${item.charges.setup_fee.toFixed(2)}` : '—'}</td>
@@ -335,19 +441,21 @@ export default function ClientDetail() {
 
 function exportCSV(period) {
   const items = period.line_items || [];
-  const lines = ['User,Type,Days Active,Seat Charge,Kingdom Addon,Setup Fee,Total'];
+  const lines = ['User,Type,Kingdom,Days Active,Kingdom Days,Seat Charge,Kingdom Charge,Setup Fee,Total'];
   for (const item of items) {
     lines.push([
       item.display_name,
       item.user_type,
+      item.kingdom_license ? 'Yes' : 'No',
       item.days_active,
+      item.kingdom_usage_days || 0,
       (item.charges.standard || item.charges.gpu || 0).toFixed(2),
       (item.charges.kingdom_addon || 0).toFixed(2),
       (item.charges.setup_fee || 0).toFixed(2),
       item.total.toFixed(2),
     ].join(','));
   }
-  lines.push(`,,,,,,${parseFloat(period.total).toFixed(2)}`);
+  lines.push(`,,,,,,,,${parseFloat(period.total).toFixed(2)}`);
   const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

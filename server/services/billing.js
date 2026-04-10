@@ -26,11 +26,12 @@ async function generateBilling(clientId, periodStart, periodEnd, adminUserId) {
     );
     if (!config) throw new Error('No billing config found');
 
-    // Users active during this period
+    // Active users during this period — exclude paused and removed
     const { rows: users } = await dbClient.query(
       `SELECT * FROM users WHERE client_id = $1
        AND added_date <= $3
-       AND (end_date IS NULL OR end_date >= $2)`,
+       AND (end_date IS NULL OR end_date >= $2)
+       AND status NOT IN ('paused', 'removed')`,
       [clientId, periodStart, periodEnd]
     );
 
@@ -45,12 +46,14 @@ async function generateBilling(clientId, periodStart, periodEnd, adminUserId) {
         user_id: user.id,
         display_name: user.display_name,
         user_type: user.user_type,
+        kingdom_license: user.kingdom_license,
         days_active: days,
         charges: {},
       };
 
       let userTotal = 0;
 
+      // Seat charge — standard or gpu
       if (user.user_type === 'gpu') {
         const gpuCharge = calcCharge(days, config.gpu_daily, config.gpu_monthly);
         item.charges.gpu = gpuCharge;
@@ -61,10 +64,21 @@ async function generateBilling(clientId, periodStart, periodEnd, adminUserId) {
         userTotal += seatCharge;
       }
 
-      if (user.user_type === 'kingdom') {
-        const kingdomCharge = calcCharge(days, config.kingdom_addon_daily, config.kingdom_addon_monthly);
-        item.charges.kingdom_addon = kingdomCharge;
-        userTotal += kingdomCharge;
+      // Kingdom charge — based on actual usage days from kingdom_usage table
+      if (user.kingdom_license) {
+        const { rows: [{ count: usageDaysStr }] } = await dbClient.query(
+          `SELECT COUNT(DISTINCT usage_date) FROM kingdom_usage
+           WHERE user_id = $1 AND usage_date >= $2 AND usage_date <= $3`,
+          [user.id, periodStart, periodEnd]
+        );
+        const kingdomDays = parseInt(usageDaysStr);
+        item.kingdom_usage_days = kingdomDays;
+
+        if (kingdomDays > 0) {
+          const kingdomCharge = calcCharge(kingdomDays, config.kingdom_addon_daily, config.kingdom_addon_monthly);
+          item.charges.kingdom_addon = kingdomCharge;
+          userTotal += kingdomCharge;
+        }
       }
 
       // Setup fee

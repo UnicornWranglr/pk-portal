@@ -21,7 +21,7 @@ router.post('/', async (req, res) => {
   const {
     type, user_id, requested_user_name, requested_user_email,
     requested_user_type, requested_end_date, requested_start_date,
-    requested_office_license, requested_project_id, notes,
+    requested_office_license, requested_kingdom_license, requested_project_id, notes,
   } = req.body;
 
   if (!type || !['add', 'remove', 'change_type'].includes(type)) {
@@ -49,14 +49,15 @@ router.post('/', async (req, res) => {
 
   const { rows } = await pool.query(
     `INSERT INTO requests (client_id, type, requested_by, user_id, requested_user_name, requested_user_email,
-       requested_user_type, requested_end_date, requested_start_date, requested_office_license, requested_project_id, notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+       requested_user_type, requested_end_date, requested_start_date, requested_office_license, requested_project_id, notes, requested_kingdom_license)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
     [
       req.clientId, type, req.user.id, user_id || null,
       requested_user_name || null, requested_user_email || null,
       requested_user_type || null, requested_end_date || null,
       requested_start_date || null, requested_office_license || false,
       requested_project_id || null, notes || null,
+      requested_kingdom_license || false,
     ]
   );
 

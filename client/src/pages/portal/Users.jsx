@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { api } from '../../api';
 
-const typeColors = { standard: 'bg-blue-100 text-blue-700', kingdom: 'bg-purple-100 text-purple-700', gpu: 'bg-amber-100 text-amber-700' };
-const statusColors = { active: 'bg-green-100 text-green-700', pending_removal: 'bg-yellow-100 text-yellow-700' };
+const typeColors = { standard: 'bg-blue-100 text-blue-700', gpu: 'bg-amber-100 text-amber-700' };
+const statusColors = { active: 'bg-green-100 text-green-700', paused: 'bg-gray-200 text-gray-600', pending_removal: 'bg-yellow-100 text-yellow-700' };
 
 export default function PortalUsers() {
   const [users, setUsers] = useState([]);
@@ -18,6 +18,7 @@ export default function PortalUsers() {
               <th className="text-left px-4 py-3 font-medium">Name</th>
               <th className="text-left px-4 py-3 font-medium">Email</th>
               <th className="text-left px-4 py-3 font-medium">Type</th>
+              <th className="text-left px-4 py-3 font-medium">Kingdom</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
               <th className="text-left px-4 py-3 font-medium">Project</th>
               <th className="text-left px-4 py-3 font-medium">Office</th>
@@ -29,7 +30,8 @@ export default function PortalUsers() {
               <tr key={u.id}>
                 <td className="px-4 py-3 font-medium">{u.display_name}</td>
                 <td className="px-4 py-3 text-gray-600">{u.email}</td>
-                <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${typeColors[u.user_type]}`}>{u.user_type}</span></td>
+                <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${typeColors[u.user_type] || 'bg-gray-100'}`}>{u.user_type}</span></td>
+                <td className="px-4 py-3">{u.kingdom_license ? <span className="text-purple-600 text-xs font-medium">Yes</span> : <span className="text-gray-400 text-xs">No</span>}</td>
                 <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[u.status] || ''}`}>{u.status}</span></td>
                 <td className="px-4 py-3 text-gray-600">{u.project_name || '—'}</td>
                 <td className="px-4 py-3">{u.requires_office_license ? <span className="text-green-600 text-xs font-medium">Yes</span> : <span className="text-gray-400 text-xs">No</span>}</td>

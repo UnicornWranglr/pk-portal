@@ -39,8 +39,8 @@ router.put('/:id/action', async (req, res) => {
 
     if (request.type === 'add') {
       await dbClient.query(
-        `INSERT INTO users (client_id, display_name, email, user_type, added_date, requires_office_license, project_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        `INSERT INTO users (client_id, display_name, email, user_type, added_date, requires_office_license, project_id, kingdom_license)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
         [
           request.client_id,
           request.requested_user_name,
@@ -49,6 +49,7 @@ router.put('/:id/action', async (req, res) => {
           request.requested_start_date || new Date().toISOString().slice(0, 10),
           request.requested_office_license || false,
           request.requested_project_id || null,
+          request.requested_kingdom_license || false,
         ]
       );
     } else if (request.type === 'remove') {
@@ -57,9 +58,16 @@ router.put('/:id/action', async (req, res) => {
         [request.requested_end_date || new Date().toISOString().slice(0, 10), request.user_id]
       );
     } else if (request.type === 'change_type') {
+      const updates = ['user_type = COALESCE($1, user_type)'];
+      const params = [request.requested_user_type];
+      if (request.requested_kingdom_license !== null && request.requested_kingdom_license !== undefined) {
+        updates.push(`kingdom_license = $${params.length + 1}`);
+        params.push(request.requested_kingdom_license);
+      }
+      params.push(request.user_id);
       await dbClient.query(
-        'UPDATE users SET user_type = $1 WHERE id = $2',
-        [request.requested_user_type, request.user_id]
+        `UPDATE users SET ${updates.join(', ')} WHERE id = $${params.length}`,
+        params
       );
     }
 

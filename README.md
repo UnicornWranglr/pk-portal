@@ -101,6 +101,17 @@ pk-portal/
 
 ## Changelog
 
+### v1.3.0 — Patch Run 2: Kingdom Refactor
+- Kingdom is now an add-on flag (`kingdom_license`) rather than a user type
+- User types simplified to standard and GPU only
+- Kingdom usage tracking: per-day calendar view on admin user detail
+- Manual toggle of usage days with audit logging
+- Kingdom log file import (CSV/Excel) with preview, user matching, and unmatched flagging
+- Billing engine refactored: kingdom charges calculated from actual usage days
+- Paused user status: excluded from all billing calculations
+- Request form: Kingdom License toggle with helper text (separate from seat type)
+- Admin requests show kingdom license flag in details
+
 ### v1.2.0 — Patch Run 1
 - Unified login page (no separate admin/client login)
 - Token expiry validation on page load

@@ -50,18 +50,18 @@ async function seed() {
       [client2.id, 'Tom Brown', 'tom@geosurvey.co.uk', clientHash]
     );
 
-    // Sample seat users
+    // Sample seat users — standard/gpu only, kingdom_license as boolean flag
     await client.query(
-      `INSERT INTO users (client_id, display_name, email, user_type, status, added_date, setup_fee_charged)
-       VALUES ($1,'Alice Johnson','alice@acme-energy.com','standard','active','2025-01-15',true),
-              ($1,'Bob Lee','bob@acme-energy.com','kingdom','active','2025-02-01',true),
-              ($1,'Carol Davis','carol@acme-energy.com','gpu','active','2025-03-10',false)`,
+      `INSERT INTO users (client_id, display_name, email, user_type, status, added_date, setup_fee_charged, kingdom_license)
+       VALUES ($1,'Alice Johnson','alice@acme-energy.com','standard','active','2025-01-15',true,false),
+              ($1,'Bob Lee','bob@acme-energy.com','standard','active','2025-02-01',true,true),
+              ($1,'Carol Davis','carol@acme-energy.com','gpu','active','2025-03-10',false,true)`,
       [client1.id]
     );
     await client.query(
-      `INSERT INTO users (client_id, display_name, email, user_type, status, added_date, setup_fee_charged)
-       VALUES ($1,'Dave Wilson','dave@geosurvey.co.uk','standard','active','2025-01-01',true),
-              ($1,'Eve Martin','eve@geosurvey.co.uk','kingdom','active','2025-02-15',true)`,
+      `INSERT INTO users (client_id, display_name, email, user_type, status, added_date, setup_fee_charged, kingdom_license)
+       VALUES ($1,'Dave Wilson','dave@geosurvey.co.uk','standard','active','2025-01-01',true,false),
+              ($1,'Eve Martin','eve@geosurvey.co.uk','standard','active','2025-02-15',true,true)`,
       [client2.id]
     );
 

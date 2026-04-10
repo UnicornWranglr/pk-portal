@@ -64,8 +64,9 @@ export default function Requests() {
                   {r.type === 'add' && (
                     <div>
                       <span className="font-medium">{r.requested_user_name}</span> ({r.requested_user_type})
+                      {r.requested_kingdom_license && <span className="ml-1 text-purple-600">[Kingdom]</span>}
                       {r.requested_office_license && <span className="ml-1 text-blue-600">[Office]</span>}
-                      {r.project_name && <span className="ml-1 text-purple-600">[{r.project_name}]</span>}
+                      {r.project_name && <span className="ml-1 text-gray-500">[{r.project_name}]</span>}
                       {r.requested_start_date && <div className="text-gray-400 mt-0.5">Start: {r.requested_start_date}</div>}
                     </div>
                   )}

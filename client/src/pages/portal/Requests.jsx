@@ -13,7 +13,8 @@ export default function PortalRequests() {
   const [form, setForm] = useState({
     requested_user_name: '', requested_user_email: '', requested_user_type: 'standard',
     user_id: '', requested_end_date: '', requested_start_date: '', notes: '',
-    requested_office_license: false, assign_project: false, requested_project_id: '',
+    requested_office_license: false, requested_kingdom_license: false,
+    assign_project: false, requested_project_id: '',
   });
   const [newProjectName, setNewProjectName] = useState('');
   const [addingProject, setAddingProject] = useState(false);
@@ -50,6 +51,7 @@ export default function PortalRequests() {
       payload.requested_user_type = form.requested_user_type;
       payload.requested_start_date = form.requested_start_date || undefined;
       payload.requested_office_license = form.requested_office_license;
+      payload.requested_kingdom_license = form.requested_kingdom_license;
       payload.requested_project_id = form.assign_project && form.requested_project_id
         ? parseInt(form.requested_project_id) : undefined;
     } else if (formType === 'remove') {
@@ -64,7 +66,8 @@ export default function PortalRequests() {
     setForm({
       requested_user_name: '', requested_user_email: '', requested_user_type: 'standard',
       user_id: '', requested_end_date: '', requested_start_date: '', notes: '',
-      requested_office_license: false, assign_project: false, requested_project_id: '',
+      requested_office_license: false, requested_kingdom_license: false,
+      assign_project: false, requested_project_id: '',
     });
     setShowForm(false);
     load();
@@ -109,7 +112,6 @@ export default function PortalRequests() {
                   <select value={form.requested_user_type} onChange={e => setForm({ ...form, requested_user_type: e.target.value })}
                     className="w-full border rounded px-3 py-2 text-sm">
                     <option value="standard">Standard</option>
-                    <option value="kingdom">Kingdom</option>
                     <option value="gpu">GPU</option>
                   </select>
                 </div>
@@ -132,6 +134,22 @@ export default function PortalRequests() {
                     <div>
                       <span className="text-sm font-medium">Microsoft Office License</span>
                       <p className="text-xs text-gray-500">Does this user require a Microsoft Office license (Outlook, Teams etc.)?</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Kingdom License */}
+                <div className="col-span-2 bg-gray-50 p-3 rounded">
+                  <div className="flex items-center gap-3">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" checked={form.requested_kingdom_license}
+                        onChange={e => setForm({ ...form, requested_kingdom_license: e.target.checked })}
+                        className="sr-only peer" />
+                      <div className="w-9 h-5 bg-gray-300 peer-checked:bg-purple-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all"></div>
+                    </label>
+                    <div>
+                      <span className="text-sm font-medium">Kingdom Software License</span>
+                      <p className="text-xs text-gray-500">Does this user require access to the Kingdom seismic interpretation software?</p>
                     </div>
                   </div>
                 </div>
@@ -211,7 +229,6 @@ export default function PortalRequests() {
                 <select value={form.requested_user_type} onChange={e => setForm({ ...form, requested_user_type: e.target.value })}
                   className="w-full border rounded px-3 py-2 text-sm">
                   <option value="standard">Standard</option>
-                  <option value="kingdom">Kingdom</option>
                   <option value="gpu">GPU</option>
                 </select>
               </div>
@@ -251,6 +268,7 @@ export default function PortalRequests() {
                   {r.type === 'add' && (
                     <span>
                       {r.requested_user_name} ({r.requested_user_type})
+                      {r.requested_kingdom_license && <span className="ml-1 text-xs text-purple-600">[Kingdom]</span>}
                       {r.requested_office_license && <span className="ml-1 text-xs text-blue-600">[Office]</span>}
                       {r.project_name && <span className="ml-1 text-xs text-purple-600">[{r.project_name}]</span>}
                     </span>
