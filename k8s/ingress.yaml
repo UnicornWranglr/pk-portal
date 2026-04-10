@@ -1,20 +1,14 @@
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
 metadata:
   name: pk-portal-ingress
   namespace: pk-portal
-  annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
 spec:
-  ingressClassName: nginx
-  rules:
-    - host: pk-portal.example.com
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: pk-portal-app
-                port:
-                  number: 80
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`pk-portal.peak-processing.com`)
+      kind: Rule
+      services:
+        - name: pk-portal-app
+          port: 80
