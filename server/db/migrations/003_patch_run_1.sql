@@ -29,6 +29,24 @@ ALTER TABLE requests ADD COLUMN IF NOT EXISTS admin_notes TEXT;
 
 -- Rename 'approved' status to 'actioned' in requests
 UPDATE requests SET status = 'actioned' WHERE status = 'approved';
-ALTER TABLE requests DROP CONSTRAINT IF EXISTS requests_status_check;
+
+-- Drop ALL check constraints on requests.status (inline constraint has auto-generated name)
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN
+    SELECT con.conname
+    FROM pg_constraint con
+    JOIN pg_attribute att ON att.attnum = ANY(con.conkey)
+      AND att.attrelid = con.conrelid
+    WHERE con.conrelid = 'requests'::regclass
+      AND con.contype = 'c'
+      AND att.attname = 'status'
+  LOOP
+    EXECUTE format('ALTER TABLE requests DROP CONSTRAINT %I', r.conname);
+  END LOOP;
+END $$;
+
 ALTER TABLE requests ADD CONSTRAINT requests_status_check
   CHECK (status IN ('pending', 'actioned', 'rejected'));
