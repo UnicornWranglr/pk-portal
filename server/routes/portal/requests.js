@@ -6,9 +6,10 @@ const router = Router();
 
 router.get('/', async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT r.*, u.display_name AS target_user_name
+    `SELECT r.*, u.display_name AS target_user_name, p.name AS project_name
      FROM requests r
      LEFT JOIN users u ON u.id = r.user_id
+     LEFT JOIN projects p ON p.id = r.requested_project_id
      WHERE r.client_id = $1
      ORDER BY r.submitted_at DESC`,
     [req.clientId]
@@ -17,7 +18,11 @@ router.get('/', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { type, user_id, requested_user_name, requested_user_email, requested_user_type, requested_end_date, notes } = req.body;
+  const {
+    type, user_id, requested_user_name, requested_user_email,
+    requested_user_type, requested_end_date, requested_start_date,
+    requested_office_license, requested_project_id, notes,
+  } = req.body;
 
   if (!type || !['add', 'remove', 'change_type'].includes(type)) {
     return res.status(400).json({ error: 'Valid type required: add, remove, change_type' });
@@ -43,13 +48,19 @@ router.post('/', async (req, res) => {
   }
 
   const { rows } = await pool.query(
-    `INSERT INTO requests (client_id, type, requested_by, user_id, requested_user_name, requested_user_email, requested_user_type, requested_end_date, notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-    [req.clientId, type, req.user.id, user_id || null, requested_user_name || null,
-     requested_user_email || null, requested_user_type || null, requested_end_date || null, notes || null]
+    `INSERT INTO requests (client_id, type, requested_by, user_id, requested_user_name, requested_user_email,
+       requested_user_type, requested_end_date, requested_start_date, requested_office_license, requested_project_id, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+    [
+      req.clientId, type, req.user.id, user_id || null,
+      requested_user_name || null, requested_user_email || null,
+      requested_user_type || null, requested_end_date || null,
+      requested_start_date || null, requested_office_license || false,
+      requested_project_id || null, notes || null,
+    ]
   );
 
-  logAction({ action: 'submit_request', entityType: 'request', entityId: rows[0].id, actorType: 'client', actorId: req.user.id, actorName: req.user.name, clientId: req.clientId, details: { type, requested_user_name, requested_user_type, user_id, requested_end_date }, ip: getIp(req) });
+  logAction({ action: 'submit_request', entityType: 'request', entityId: rows[0].id, actorType: 'client', actorId: req.user.id, actorName: req.user.name, clientId: req.clientId, details: { type, requested_user_name, requested_user_type, requested_office_license, requested_project_id }, ip: getIp(req) });
   res.status(201).json(rows[0]);
 });
 

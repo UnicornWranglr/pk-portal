@@ -10,7 +10,7 @@ async function request(path, options = {}) {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     window.location.href = '/';
-    throw new Error('Unauthorized');
+    throw new Error('Session expired — please sign in again');
   }
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Request failed');

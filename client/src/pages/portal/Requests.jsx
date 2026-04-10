@@ -2,21 +2,42 @@ import { useState, useEffect } from 'react';
 import { api } from '../../api';
 
 const typeBadge = { add: 'bg-green-100 text-green-700', remove: 'bg-red-100 text-red-700', change_type: 'bg-blue-100 text-blue-700' };
-const statusBadge = { pending: 'bg-yellow-100 text-yellow-700', approved: 'bg-green-100 text-green-700', rejected: 'bg-red-100 text-red-700' };
+const statusBadge = { pending: 'bg-yellow-100 text-yellow-700', actioned: 'bg-green-100 text-green-700', rejected: 'bg-red-100 text-red-700' };
 
 export default function PortalRequests() {
   const [requests, setRequests] = useState([]);
   const [users, setUsers] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [formType, setFormType] = useState('add');
-  const [form, setForm] = useState({ requested_user_name: '', requested_user_email: '', requested_user_type: 'standard', user_id: '', requested_end_date: '', notes: '' });
+  const [form, setForm] = useState({
+    requested_user_name: '', requested_user_email: '', requested_user_type: 'standard',
+    user_id: '', requested_end_date: '', requested_start_date: '', notes: '',
+    requested_office_license: false, assign_project: false, requested_project_id: '',
+  });
+  const [newProjectName, setNewProjectName] = useState('');
+  const [addingProject, setAddingProject] = useState(false);
 
   useEffect(() => { load(); }, []);
 
   async function load() {
-    const [r, u] = await Promise.all([api.get('/portal/requests'), api.get('/portal/users')]);
+    const [r, u, p] = await Promise.all([
+      api.get('/portal/requests'),
+      api.get('/portal/users'),
+      api.get('/portal/projects'),
+    ]);
     setRequests(r);
     setUsers(u);
+    setProjects(p);
+  }
+
+  async function handleAddProject() {
+    if (!newProjectName.trim()) return;
+    const project = await api.post('/portal/projects', { name: newProjectName.trim() });
+    setProjects([...projects, project]);
+    setForm({ ...form, requested_project_id: String(project.id) });
+    setNewProjectName('');
+    setAddingProject(false);
   }
 
   async function handleSubmit(e) {
@@ -27,6 +48,10 @@ export default function PortalRequests() {
       payload.requested_user_name = form.requested_user_name;
       payload.requested_user_email = form.requested_user_email || undefined;
       payload.requested_user_type = form.requested_user_type;
+      payload.requested_start_date = form.requested_start_date || undefined;
+      payload.requested_office_license = form.requested_office_license;
+      payload.requested_project_id = form.assign_project && form.requested_project_id
+        ? parseInt(form.requested_project_id) : undefined;
     } else if (formType === 'remove') {
       payload.user_id = parseInt(form.user_id);
       payload.requested_end_date = form.requested_end_date || undefined;
@@ -36,7 +61,11 @@ export default function PortalRequests() {
     }
 
     await api.post('/portal/requests', payload);
-    setForm({ requested_user_name: '', requested_user_email: '', requested_user_type: 'standard', user_id: '', requested_end_date: '', notes: '' });
+    setForm({
+      requested_user_name: '', requested_user_email: '', requested_user_type: 'standard',
+      user_id: '', requested_end_date: '', requested_start_date: '', notes: '',
+      requested_office_license: false, assign_project: false, requested_project_id: '',
+    });
     setShowForm(false);
     load();
   }
@@ -52,12 +81,12 @@ export default function PortalRequests() {
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="bg-white p-4 rounded-lg shadow mb-6">
-          <div className="flex gap-2 mb-4">
+        <form onSubmit={handleSubmit} className="bg-white p-5 rounded-lg shadow mb-6">
+          <div className="flex gap-2 mb-5">
             {['add', 'remove', 'change_type'].map(t => (
               <button type="button" key={t} onClick={() => setFormType(t)}
                 className={`px-3 py-1.5 rounded text-sm font-medium capitalize ${formType === t ? 'bg-indigo-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}`}>
-                {t === 'change_type' ? 'Change Type' : t}
+                {t === 'change_type' ? 'Change Type' : t === 'add' ? 'Add User' : 'Remove User'}
               </button>
             ))}
           </div>
@@ -68,12 +97,12 @@ export default function PortalRequests() {
                 <div>
                   <label className="block text-xs font-medium mb-1">User Name *</label>
                   <input value={form.requested_user_name} onChange={e => setForm({ ...form, requested_user_name: e.target.value })} required
-                    className="w-full border rounded px-3 py-2 text-sm" />
+                    className="w-full border rounded px-3 py-2 text-sm" placeholder="Full name" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium mb-1">Email</label>
                   <input type="email" value={form.requested_user_email} onChange={e => setForm({ ...form, requested_user_email: e.target.value })}
-                    className="w-full border rounded px-3 py-2 text-sm" />
+                    className="w-full border rounded px-3 py-2 text-sm" placeholder="user@company.com" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium mb-1">Seat Type *</label>
@@ -83,6 +112,73 @@ export default function PortalRequests() {
                     <option value="kingdom">Kingdom</option>
                     <option value="gpu">GPU</option>
                   </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1">Start Date</label>
+                  <input type="date" value={form.requested_start_date} onChange={e => setForm({ ...form, requested_start_date: e.target.value })}
+                    className="w-full border rounded px-3 py-2 text-sm" />
+                  <p className="text-xs text-gray-400 mt-1">When should this user's access begin?</p>
+                </div>
+
+                {/* Office License */}
+                <div className="col-span-2 bg-gray-50 p-3 rounded">
+                  <div className="flex items-center gap-3">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" checked={form.requested_office_license}
+                        onChange={e => setForm({ ...form, requested_office_license: e.target.checked })}
+                        className="sr-only peer" />
+                      <div className="w-9 h-5 bg-gray-300 peer-checked:bg-indigo-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all"></div>
+                    </label>
+                    <div>
+                      <span className="text-sm font-medium">Microsoft Office License</span>
+                      <p className="text-xs text-gray-500">Does this user require a Microsoft Office license (Outlook, Teams etc.)?</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Project Assignment */}
+                <div className="col-span-2 bg-gray-50 p-3 rounded">
+                  <div className="flex items-center gap-3 mb-2">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" checked={form.assign_project}
+                        onChange={e => setForm({ ...form, assign_project: e.target.checked, requested_project_id: '' })}
+                        className="sr-only peer" />
+                      <div className="w-9 h-5 bg-gray-300 peer-checked:bg-indigo-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all"></div>
+                    </label>
+                    <div>
+                      <span className="text-sm font-medium">Assign to Project</span>
+                      <p className="text-xs text-gray-500">Is this user assigned to a specific project?</p>
+                    </div>
+                  </div>
+                  {form.assign_project && (
+                    <div className="ml-12 mt-2">
+                      {!addingProject ? (
+                        <div className="flex gap-2">
+                          <select value={form.requested_project_id}
+                            onChange={e => setForm({ ...form, requested_project_id: e.target.value })}
+                            className="flex-1 border rounded px-3 py-2 text-sm">
+                            <option value="">Select project...</option>
+                            {projects.map(p => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                          </select>
+                          <button type="button" onClick={() => setAddingProject(true)}
+                            className="text-sm text-indigo-600 hover:text-indigo-800 whitespace-nowrap">
+                            + New project
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <input value={newProjectName} onChange={e => setNewProjectName(e.target.value)}
+                            placeholder="Project name" className="flex-1 border rounded px-3 py-2 text-sm" />
+                          <button type="button" onClick={handleAddProject}
+                            className="bg-indigo-600 text-white px-3 py-2 rounded text-sm hover:bg-indigo-700">Add</button>
+                          <button type="button" onClick={() => { setAddingProject(false); setNewProjectName(''); }}
+                            className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </>
             )}
@@ -105,6 +201,7 @@ export default function PortalRequests() {
                 <label className="block text-xs font-medium mb-1">End Date</label>
                 <input type="date" value={form.requested_end_date} onChange={e => setForm({ ...form, requested_end_date: e.target.value })}
                   className="w-full border rounded px-3 py-2 text-sm" />
+                <p className="text-xs text-gray-400 mt-1">Last day of access for this user</p>
               </div>
             )}
 
@@ -123,6 +220,7 @@ export default function PortalRequests() {
             <div className="col-span-2">
               <label className="block text-xs font-medium mb-1">Notes</label>
               <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2}
+                placeholder="Any additional information — e.g. which project they're assigned to, special requirements"
                 className="w-full border rounded px-3 py-2 text-sm" />
             </div>
           </div>
@@ -142,6 +240,7 @@ export default function PortalRequests() {
               <th className="text-left px-4 py-3 font-medium">Status</th>
               <th className="text-left px-4 py-3 font-medium">Submitted</th>
               <th className="text-left px-4 py-3 font-medium">Notes</th>
+              <th className="text-left px-4 py-3 font-medium">Admin Response</th>
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -149,13 +248,20 @@ export default function PortalRequests() {
               <tr key={r.id}>
                 <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${typeBadge[r.type]}`}>{r.type}</span></td>
                 <td className="px-4 py-3 text-gray-600">
-                  {r.type === 'add' && `${r.requested_user_name} (${r.requested_user_type})`}
+                  {r.type === 'add' && (
+                    <span>
+                      {r.requested_user_name} ({r.requested_user_type})
+                      {r.requested_office_license && <span className="ml-1 text-xs text-blue-600">[Office]</span>}
+                      {r.project_name && <span className="ml-1 text-xs text-purple-600">[{r.project_name}]</span>}
+                    </span>
+                  )}
                   {r.type === 'remove' && `${r.target_user_name || 'User #' + r.user_id} — end: ${r.requested_end_date || 'ASAP'}`}
                   {r.type === 'change_type' && `${r.target_user_name || 'User #' + r.user_id} → ${r.requested_user_type}`}
                 </td>
                 <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${statusBadge[r.status]}`}>{r.status}</span></td>
                 <td className="px-4 py-3 text-gray-500">{new Date(r.submitted_at).toLocaleString()}</td>
-                <td className="px-4 py-3 text-gray-500 text-xs">{r.notes || '—'}</td>
+                <td className="px-4 py-3 text-gray-500 text-xs max-w-[150px] truncate">{r.notes || '—'}</td>
+                <td className="px-4 py-3 text-gray-500 text-xs max-w-[150px] truncate">{r.admin_notes || '—'}</td>
               </tr>
             ))}
           </tbody>

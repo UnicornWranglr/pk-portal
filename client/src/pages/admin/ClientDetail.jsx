@@ -9,31 +9,73 @@ export default function ClientDetail() {
   const { id } = useParams();
   const [client, setClient] = useState(null);
   const [users, setUsers] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [billing, setBilling] = useState([]);
   const [tab, setTab] = useState('users');
-  const [showAddUser, setShowAddUser] = useState(false);
-  const [userForm, setUserForm] = useState({ display_name: '', email: '', user_type: 'standard' });
+  const [editingClient, setEditingClient] = useState(false);
+  const [clientForm, setClientForm] = useState({});
+  const [editingUserId, setEditingUserId] = useState(null);
+  const [userForm, setUserForm] = useState({});
   const [billingForm, setBillingForm] = useState({ period_start: '', period_end: '' });
   const [selectedPeriod, setSelectedPeriod] = useState(null);
+  const [newProjectName, setNewProjectName] = useState('');
 
   useEffect(() => { load(); }, [id]);
 
   async function load() {
-    const [c, u, b] = await Promise.all([
+    const [c, u, p, b] = await Promise.all([
       api.get(`/admin/clients/${id}`),
       api.get(`/admin/clients/${id}/users`),
+      api.get(`/admin/clients/${id}/projects`),
       api.get(`/admin/billing/periods/${id}`),
     ]);
     setClient(c);
     setUsers(u);
+    setProjects(p);
     setBilling(b);
   }
 
-  async function handleAddUser(e) {
+  // Client CRUD
+  function startEditClient() {
+    setClientForm({ name: client.name, contact_email: client.contact_email || '', billing_contact: client.billing_contact || '' });
+    setEditingClient(true);
+  }
+
+  async function saveClient(e) {
     e.preventDefault();
-    await api.post(`/admin/clients/${id}/users`, userForm);
-    setUserForm({ display_name: '', email: '', user_type: 'standard' });
-    setShowAddUser(false);
+    await api.put(`/admin/clients/${id}`, clientForm);
+    setEditingClient(false);
+    load();
+  }
+
+  // User editing
+  function startEditUser(user) {
+    setEditingUserId(user.id);
+    setUserForm({
+      display_name: user.display_name,
+      email: user.email || '',
+      user_type: user.user_type,
+      status: user.status,
+      end_date: user.end_date || '',
+      requires_office_license: user.requires_office_license || false,
+      project_id: user.project_id || '',
+    });
+  }
+
+  async function saveUser(e) {
+    e.preventDefault();
+    await api.put(`/admin/users/${editingUserId}`, {
+      ...userForm,
+      project_id: userForm.project_id ? parseInt(userForm.project_id) : null,
+    });
+    setEditingUserId(null);
+    load();
+  }
+
+  async function handleAddProject() {
+    if (!newProjectName.trim()) return;
+    await api.post(`/admin/clients/${id}/projects`, { name: newProjectName.trim() });
+    setNewProjectName('');
     load();
   }
 
@@ -49,89 +91,164 @@ export default function ClientDetail() {
 
   return (
     <div>
+      {/* Client header */}
       <div className="mb-6">
         <Link to="/admin/clients" className="text-sm text-blue-600 hover:underline">&larr; All Clients</Link>
-        <h2 className="text-xl font-bold mt-2">{client.name}</h2>
-        <p className="text-sm text-gray-500">{client.contact_email} &middot; Billing: {client.billing_contact}</p>
+
+        {editingClient ? (
+          <form onSubmit={saveClient} className="bg-white p-4 rounded-lg shadow mt-2">
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-medium mb-1">Name *</label>
+                <input value={clientForm.name} onChange={e => setClientForm({ ...clientForm, name: e.target.value })} required
+                  className="w-full border rounded px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1">Contact Email</label>
+                <input type="email" value={clientForm.contact_email} onChange={e => setClientForm({ ...clientForm, contact_email: e.target.value })}
+                  className="w-full border rounded px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1">Billing Contact</label>
+                <input value={clientForm.billing_contact} onChange={e => setClientForm({ ...clientForm, billing_contact: e.target.value })}
+                  className="w-full border rounded px-3 py-2 text-sm" />
+              </div>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button type="submit" className="bg-blue-600 text-white px-4 py-1.5 rounded text-sm">Save</button>
+              <button type="button" onClick={() => setEditingClient(false)} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+            </div>
+          </form>
+        ) : (
+          <div className="flex items-start justify-between mt-2">
+            <div>
+              <h2 className="text-xl font-bold">{client.name}</h2>
+              <p className="text-sm text-gray-500">{client.contact_email} &middot; Billing: {client.billing_contact}</p>
+            </div>
+            <button onClick={startEditClient} className="text-sm text-blue-600 hover:underline">Edit</button>
+          </div>
+        )}
       </div>
 
+      {/* Tabs */}
       <div className="flex gap-2 mb-4">
-        {['users', 'billing'].map(t => (
+        {['users', 'projects', 'billing'].map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 rounded text-sm font-medium ${tab === t ? 'bg-gray-900 text-white' : 'bg-white border hover:bg-gray-50'}`}>
-            {t === 'users' ? 'Users' : 'Billing'}
+            className={`px-4 py-2 rounded text-sm font-medium capitalize ${tab === t ? 'bg-gray-900 text-white' : 'bg-white border hover:bg-gray-50'}`}>
+            {t}
           </button>
         ))}
       </div>
 
+      {/* Users tab */}
       {tab === 'users' && (
+        <div className="bg-white rounded-lg shadow overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="text-left px-4 py-3 font-medium">Name</th>
+                <th className="text-left px-4 py-3 font-medium">Email</th>
+                <th className="text-left px-4 py-3 font-medium">Type</th>
+                <th className="text-left px-4 py-3 font-medium">Status</th>
+                <th className="text-left px-4 py-3 font-medium">Project</th>
+                <th className="text-left px-4 py-3 font-medium">Office</th>
+                <th className="text-left px-4 py-3 font-medium">Added</th>
+                <th className="text-left px-4 py-3 font-medium">End Date</th>
+                <th className="text-left px-4 py-3 font-medium w-16"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {users.map(u => editingUserId === u.id ? (
+                <tr key={u.id} className="bg-blue-50">
+                  <td className="px-4 py-2"><input value={userForm.display_name} onChange={e => setUserForm({ ...userForm, display_name: e.target.value })} className="w-full border rounded px-2 py-1 text-sm" /></td>
+                  <td className="px-4 py-2"><input value={userForm.email} onChange={e => setUserForm({ ...userForm, email: e.target.value })} className="w-full border rounded px-2 py-1 text-sm" /></td>
+                  <td className="px-4 py-2">
+                    <select value={userForm.user_type} onChange={e => setUserForm({ ...userForm, user_type: e.target.value })} className="border rounded px-2 py-1 text-sm">
+                      <option value="standard">Standard</option>
+                      <option value="kingdom">Kingdom</option>
+                      <option value="gpu">GPU</option>
+                    </select>
+                  </td>
+                  <td className="px-4 py-2">
+                    <select value={userForm.status} onChange={e => setUserForm({ ...userForm, status: e.target.value })} className="border rounded px-2 py-1 text-sm">
+                      <option value="active">Active</option>
+                      <option value="pending_removal">Pending Removal</option>
+                      <option value="removed">Removed</option>
+                    </select>
+                  </td>
+                  <td className="px-4 py-2">
+                    <select value={userForm.project_id} onChange={e => setUserForm({ ...userForm, project_id: e.target.value })} className="border rounded px-2 py-1 text-sm">
+                      <option value="">None</option>
+                      {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-4 py-2 text-center">
+                    <input type="checkbox" checked={userForm.requires_office_license} onChange={e => setUserForm({ ...userForm, requires_office_license: e.target.checked })} />
+                  </td>
+                  <td className="px-4 py-2 text-gray-500 text-xs">{u.added_date}</td>
+                  <td className="px-4 py-2"><input type="date" value={userForm.end_date} onChange={e => setUserForm({ ...userForm, end_date: e.target.value })} className="border rounded px-2 py-1 text-xs" /></td>
+                  <td className="px-4 py-2">
+                    <div className="flex gap-1">
+                      <button onClick={saveUser} className="text-green-600 hover:text-green-800 text-xs font-medium">Save</button>
+                      <button onClick={() => setEditingUserId(null)} className="text-gray-400 hover:text-gray-600 text-xs">Cancel</button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={u.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 font-medium">{u.display_name}</td>
+                  <td className="px-4 py-3 text-gray-600">{u.email}</td>
+                  <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${typeColors[u.user_type]}`}>{u.user_type}</span></td>
+                  <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[u.status]}`}>{u.status}</span></td>
+                  <td className="px-4 py-3 text-gray-600 text-xs">{u.project_name || '—'}</td>
+                  <td className="px-4 py-3">{u.requires_office_license ? <span className="text-green-600 text-xs font-medium">Yes</span> : <span className="text-gray-400 text-xs">No</span>}</td>
+                  <td className="px-4 py-3 text-gray-500 text-xs">{u.added_date}</td>
+                  <td className="px-4 py-3 text-gray-500 text-xs">{u.end_date || '—'}</td>
+                  <td className="px-4 py-3">
+                    <button onClick={() => startEditUser(u)} className="text-blue-600 hover:text-blue-800 text-xs">Edit</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {users.length === 0 && <p className="text-center py-8 text-gray-500">No users — they'll appear here when requests are actioned</p>}
+        </div>
+      )}
+
+      {/* Projects tab */}
+      {tab === 'projects' && (
         <div>
-          <div className="flex justify-end mb-4">
-            <button onClick={() => setShowAddUser(!showAddUser)}
-              className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">
-              {showAddUser ? 'Cancel' : 'Add User'}
-            </button>
+          <div className="bg-white rounded-lg shadow p-4 mb-4 flex gap-2 items-end">
+            <div className="flex-1">
+              <label className="block text-xs font-medium mb-1">New Project</label>
+              <input value={newProjectName} onChange={e => setNewProjectName(e.target.value)}
+                placeholder="Project name" className="w-full border rounded px-3 py-2 text-sm" />
+            </div>
+            <button onClick={handleAddProject} className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">Add</button>
           </div>
-
-          {showAddUser && (
-            <form onSubmit={handleAddUser} className="bg-white p-4 rounded-lg shadow mb-4 grid grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs font-medium mb-1">Name *</label>
-                <input value={userForm.display_name} onChange={e => setUserForm({ ...userForm, display_name: e.target.value })} required
-                  className="w-full border rounded px-3 py-2 text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium mb-1">Email</label>
-                <input type="email" value={userForm.email} onChange={e => setUserForm({ ...userForm, email: e.target.value })}
-                  className="w-full border rounded px-3 py-2 text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium mb-1">Type *</label>
-                <select value={userForm.user_type} onChange={e => setUserForm({ ...userForm, user_type: e.target.value })}
-                  className="w-full border rounded px-3 py-2 text-sm">
-                  <option value="standard">Standard</option>
-                  <option value="kingdom">Kingdom</option>
-                  <option value="gpu">GPU</option>
-                </select>
-              </div>
-              <div className="col-span-3">
-                <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded text-sm">Add User</button>
-              </div>
-            </form>
-          )}
-
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b">
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium">Name</th>
-                  <th className="text-left px-4 py-3 font-medium">Email</th>
-                  <th className="text-left px-4 py-3 font-medium">Type</th>
-                  <th className="text-left px-4 py-3 font-medium">Status</th>
-                  <th className="text-left px-4 py-3 font-medium">Added</th>
-                  <th className="text-left px-4 py-3 font-medium">End Date</th>
-                  <th className="text-left px-4 py-3 font-medium">Setup Fee</th>
+                  <th className="text-left px-4 py-3 font-medium">Project Name</th>
+                  <th className="text-left px-4 py-3 font-medium">Created</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {users.map(u => (
-                  <tr key={u.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium">{u.display_name}</td>
-                    <td className="px-4 py-3 text-gray-600">{u.email}</td>
-                    <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${typeColors[u.user_type]}`}>{u.user_type}</span></td>
-                    <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[u.status]}`}>{u.status}</span></td>
-                    <td className="px-4 py-3 text-gray-500">{u.added_date}</td>
-                    <td className="px-4 py-3 text-gray-500">{u.end_date || '—'}</td>
-                    <td className="px-4 py-3">{u.setup_fee_charged ? 'Charged' : 'Pending'}</td>
+                {projects.map(p => (
+                  <tr key={p.id}>
+                    <td className="px-4 py-3 font-medium">{p.name}</td>
+                    <td className="px-4 py-3 text-gray-500">{new Date(p.created_at).toLocaleDateString()}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {users.length === 0 && <p className="text-center py-8 text-gray-500">No users</p>}
+            {projects.length === 0 && <p className="text-center py-8 text-gray-500">No projects yet</p>}
           </div>
         </div>
       )}
 
+      {/* Billing tab */}
       {tab === 'billing' && (
         <div>
           <form onSubmit={handleGenerateBilling} className="bg-white p-4 rounded-lg shadow mb-6 flex gap-4 items-end">
@@ -151,9 +268,7 @@ export default function ClientDetail() {
           {selectedPeriod && (
             <div className="bg-white rounded-lg shadow p-4 mb-6">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold">
-                  Billing: {selectedPeriod.period_start} to {selectedPeriod.period_end}
-                </h3>
+                <h3 className="font-bold">Billing: {selectedPeriod.period_start} to {selectedPeriod.period_end}</h3>
                 <span className="text-lg font-bold text-green-700">&pound;{parseFloat(selectedPeriod.total).toFixed(2)}</span>
               </div>
               <table className="w-full text-sm">

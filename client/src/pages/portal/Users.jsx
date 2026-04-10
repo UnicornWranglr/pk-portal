@@ -19,6 +19,8 @@ export default function PortalUsers() {
               <th className="text-left px-4 py-3 font-medium">Email</th>
               <th className="text-left px-4 py-3 font-medium">Type</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
+              <th className="text-left px-4 py-3 font-medium">Project</th>
+              <th className="text-left px-4 py-3 font-medium">Office</th>
               <th className="text-left px-4 py-3 font-medium">Added</th>
             </tr>
           </thead>
@@ -29,6 +31,8 @@ export default function PortalUsers() {
                 <td className="px-4 py-3 text-gray-600">{u.email}</td>
                 <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${typeColors[u.user_type]}`}>{u.user_type}</span></td>
                 <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[u.status] || ''}`}>{u.status}</span></td>
+                <td className="px-4 py-3 text-gray-600">{u.project_name || '—'}</td>
+                <td className="px-4 py-3">{u.requires_office_license ? <span className="text-green-600 text-xs font-medium">Yes</span> : <span className="text-gray-400 text-xs">No</span>}</td>
                 <td className="px-4 py-3 text-gray-500">{u.added_date}</td>
               </tr>
             ))}

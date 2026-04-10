@@ -14,14 +14,14 @@ export default function AdminLayout() {
 
   function handleLogout() {
     logout();
-    navigate('/admin/login');
+    navigate('/');
   }
 
   return (
     <div className="flex h-screen">
       <aside className="w-56 bg-gray-900 text-white flex flex-col">
         <div className="p-4 border-b border-gray-700">
-          <h1 className="text-lg font-bold">PK-Portal</h1>
+          <h1 className="text-lg font-bold">Peak Portal</h1>
           <p className="text-xs text-gray-400">Admin</p>
         </div>
         <nav className="flex-1 p-2 space-y-1">

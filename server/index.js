@@ -15,6 +15,7 @@ app.use('/api/auth', require('./routes/auth'));
 // Admin routes
 app.use('/api/admin/clients', verifyToken, requireAdmin, require('./routes/admin/clients'));
 app.use('/api/admin', verifyToken, requireAdmin, require('./routes/admin/users'));
+app.use('/api/admin', verifyToken, requireAdmin, require('./routes/admin/projects'));
 app.use('/api/admin/requests', verifyToken, requireAdmin, require('./routes/admin/requests'));
 app.use('/api/admin/billing', verifyToken, requireAdmin, require('./routes/admin/billing'));
 app.use('/api/admin/activity', verifyToken, requireAdmin, require('./routes/admin/activity'));
@@ -22,6 +23,8 @@ app.use('/api/admin/activity', verifyToken, requireAdmin, require('./routes/admi
 // Client portal routes
 app.use('/api/portal/users', verifyToken, requireClient, clientScope, require('./routes/portal/users'));
 app.use('/api/portal/requests', verifyToken, requireClient, clientScope, require('./routes/portal/requests'));
+app.use('/api/portal/projects', verifyToken, requireClient, clientScope, require('./routes/portal/projects'));
+app.use('/api/portal/notifications', verifyToken, requireClient, clientScope, require('./routes/portal/notifications'));
 
 // Serve static frontend in production
 const clientBuild = path.join(__dirname, '..', 'client', 'dist');
