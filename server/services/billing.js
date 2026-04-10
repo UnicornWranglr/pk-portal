@@ -6,20 +6,44 @@ function calcCharge(daysActive, dailyRate, monthlyRate) {
   return dailyTotal >= monthly ? monthly : dailyTotal;
 }
 
+/**
+ * Parse a date value (string or Date object) to a UTC-noon Date,
+ * avoiding timezone-shift bugs with date-only ISO strings.
+ */
+function parseDate(val) {
+  if (!val) return null;
+  // If it's a Date object, extract YYYY-MM-DD components directly
+  if (val instanceof Date) {
+    return new Date(Date.UTC(val.getFullYear(), val.getMonth(), val.getDate(), 12));
+  }
+  // String: take the YYYY-MM-DD portion and parse as UTC noon
+  const str = String(val).slice(0, 10);
+  const [y, m, d] = str.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d, 12));
+}
+
 function daysInRange(addedDate, endDate, periodStart, periodEnd) {
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const todayUtc = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate(), 12));
 
-  const start = new Date(Math.max(new Date(addedDate), new Date(periodStart)));
+  const userStart = parseDate(addedDate);
+  const pStart = parseDate(periodStart);
+  const pEnd = parseDate(periodEnd);
 
-  // End date is the earliest of: user end_date, period end, or today
-  // This prevents charging for future days that haven't occurred yet
-  const candidates = [new Date(periodEnd), today];
-  if (endDate) candidates.push(new Date(endDate));
-  const end = new Date(Math.min(...candidates.map(d => d.getTime())));
+  // Start of billable range: later of added_date or period_start
+  const start = userStart > pStart ? userStart : pStart;
+
+  // End of billable range: earliest of end_date (if set), period_end, and today
+  let end = pEnd < todayUtc ? pEnd : todayUtc;
+  if (endDate) {
+    const userEnd = parseDate(endDate);
+    if (userEnd < end) end = userEnd;
+  }
 
   if (start > end) return 0;
-  return Math.floor((end - start) / (1000 * 60 * 60 * 24)) + 1; // inclusive
+
+  const msPerDay = 1000 * 60 * 60 * 24;
+  return Math.round((end - start) / msPerDay) + 1; // inclusive of both start and end
 }
 
 async function generateBilling(clientId, periodStart, periodEnd, adminUserId) {
@@ -35,7 +59,6 @@ async function generateBilling(clientId, periodStart, periodEnd, adminUserId) {
     const today = new Date().toISOString().slice(0, 10);
 
     // Active users during this period — exclude paused and removed
-    // Only include users whose added_date is on or before today AND the period end
     const { rows: users } = await dbClient.query(
       `SELECT * FROM users WHERE client_id = $1
        AND added_date <= LEAST($3::date, $4::date)
@@ -73,8 +96,7 @@ async function generateBilling(clientId, periodStart, periodEnd, adminUserId) {
         userTotal += seatCharge;
       }
 
-      // Kingdom charge — based on actual usage days from kingdom_usage table
-      // Only count usage days up to today (no future dates)
+      // Kingdom charge — actual usage days within the period, capped at today
       if (user.kingdom_license) {
         const { rows: [{ count: usageDaysStr }] } = await dbClient.query(
           `SELECT COUNT(DISTINCT usage_date) FROM kingdom_usage
@@ -91,8 +113,13 @@ async function generateBilling(clientId, periodStart, periodEnd, adminUserId) {
         }
       }
 
-      // Setup fee
-      if (!user.setup_fee_charged) {
+      // Setup fee — only if not already charged, then set flag atomically
+      // Re-read the flag inside the transaction to avoid race conditions
+      const { rows: [freshUser] } = await dbClient.query(
+        'SELECT setup_fee_charged FROM users WHERE id = $1 FOR UPDATE',
+        [user.id]
+      );
+      if (freshUser && !freshUser.setup_fee_charged) {
         const fee = parseFloat(config.setup_fee);
         item.charges.setup_fee = fee;
         userTotal += fee;
