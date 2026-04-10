@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build output
+client/dist/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+server/.env
+server/.env.*
+!server/.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# K8s secrets (use secrets.yaml.example as template)
+k8s/secrets.yaml
+
+# Docker volumes
+pgdata/
+
+# Coverage & testing
+coverage/
+.nyc_output/

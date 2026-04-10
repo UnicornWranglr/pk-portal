@@ -1,0 +1,25 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pk_portal
+      POSTGRES_PASSWORD: pk_portal
+      POSTGRES_DB: pk_portal
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: postgresql://pk_portal:pk_portal@db:5432/pk_portal
+      JWT_SECRET: dev-secret-change-in-production
+      PORT: "3001"
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
