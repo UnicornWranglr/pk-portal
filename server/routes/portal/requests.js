@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const pool = require('../../db/pool');
+const { logAction, getIp } = require('../../services/audit');
 
 const router = Router();
 
@@ -47,6 +48,8 @@ router.post('/', async (req, res) => {
     [req.clientId, type, req.user.id, user_id || null, requested_user_name || null,
      requested_user_email || null, requested_user_type || null, requested_end_date || null, notes || null]
   );
+
+  logAction({ action: 'submit_request', entityType: 'request', entityId: rows[0].id, actorType: 'client', actorId: req.user.id, actorName: req.user.name, clientId: req.clientId, details: { type, requested_user_name, requested_user_type, user_id, requested_end_date }, ip: getIp(req) });
   res.status(201).json(rows[0]);
 });
 

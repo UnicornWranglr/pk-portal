@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const pool = require('../../db/pool');
 const { generateBilling } = require('../../services/billing');
+const { logAction, getIp } = require('../../services/audit');
 
 const router = Router();
 
@@ -18,6 +19,9 @@ router.put('/config', async (req, res) => {
     setup_fee, fair_use_threshold_days,
   } = req.body;
 
+  // Capture old values for audit
+  const { rows: [old] } = await pool.query('SELECT standard_daily, standard_monthly, kingdom_addon_daily, kingdom_addon_monthly, gpu_daily, gpu_monthly, setup_fee, fair_use_threshold_days FROM billing_config ORDER BY id DESC LIMIT 1');
+
   const { rows } = await pool.query(
     `UPDATE billing_config SET
        standard_daily = COALESCE($1, standard_daily),
@@ -34,6 +38,8 @@ router.put('/config', async (req, res) => {
     [standard_daily, standard_monthly, kingdom_addon_daily, kingdom_addon_monthly,
      gpu_daily, gpu_monthly, setup_fee, fair_use_threshold_days]
   );
+
+  logAction({ action: 'update_billing_config', entityType: 'billing_config', entityId: rows[0].id, actorType: 'admin', actorId: req.user.id, actorName: req.user.name, details: { old, new: { standard_daily: rows[0].standard_daily, standard_monthly: rows[0].standard_monthly, kingdom_addon_daily: rows[0].kingdom_addon_daily, kingdom_addon_monthly: rows[0].kingdom_addon_monthly, gpu_daily: rows[0].gpu_daily, gpu_monthly: rows[0].gpu_monthly, setup_fee: rows[0].setup_fee, fair_use_threshold_days: rows[0].fair_use_threshold_days } }, ip: getIp(req) });
   res.json(rows[0]);
 });
 
@@ -45,6 +51,8 @@ router.post('/generate/:clientId', async (req, res) => {
   const result = await generateBilling(
     parseInt(req.params.clientId), period_start, period_end, req.user.id
   );
+
+  logAction({ action: 'generate_billing', entityType: 'billing_period', entityId: result.id, actorType: 'admin', actorId: req.user.id, actorName: req.user.name, clientId: parseInt(req.params.clientId), details: { period_start, period_end, total: result.total, line_item_count: (result.line_items || []).length }, ip: getIp(req) });
   res.json(result);
 });
 

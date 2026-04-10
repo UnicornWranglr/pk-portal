@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const pool = require('../../db/pool');
+const { logAction, getIp } = require('../../services/audit');
 
 const router = Router();
 
@@ -58,6 +59,8 @@ router.put('/:id/approve', async (req, res) => {
     );
 
     await client.query('COMMIT');
+
+    logAction({ action: 'approve_request', entityType: 'request', entityId: request.id, actorType: 'admin', actorId: req.user.id, actorName: req.user.name, clientId: request.client_id, details: { type: request.type, requested_user_name: request.requested_user_name, requested_user_type: request.requested_user_type, user_id: request.user_id }, ip: getIp(req) });
     res.json({ message: 'Request approved' });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -74,6 +77,9 @@ router.put('/:id/reject', async (req, res) => {
     [req.user.id, req.body.notes || null, req.params.id]
   );
   if (rows.length === 0) return res.status(404).json({ error: 'Pending request not found' });
+
+  const request = rows[0];
+  logAction({ action: 'reject_request', entityType: 'request', entityId: request.id, actorType: 'admin', actorId: req.user.id, actorName: req.user.name, clientId: request.client_id, details: { type: request.type, requested_user_name: request.requested_user_name, notes: req.body.notes }, ip: getIp(req) });
   res.json({ message: 'Request rejected' });
 });
 
