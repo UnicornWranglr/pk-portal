@@ -9,6 +9,7 @@ import AdminRequests from './pages/admin/Requests';
 import BillingConfig from './pages/admin/BillingConfig';
 import ActivityLog from './pages/admin/ActivityLog';
 import KingdomImport from './pages/admin/KingdomImport';
+import DataImport from './pages/admin/DataImport';
 import PortalUsers from './pages/portal/Users';
 import PortalRequests from './pages/portal/Requests';
 
@@ -41,6 +42,7 @@ export default function App() {
             <Route path="requests" element={<AdminRequests />} />
             <Route path="billing-config" element={<BillingConfig />} />
             <Route path="kingdom-import" element={<KingdomImport />} />
+            <Route path="data-import" element={<DataImport />} />
             <Route path="activity" element={<ActivityLog />} />
           </Route>
 

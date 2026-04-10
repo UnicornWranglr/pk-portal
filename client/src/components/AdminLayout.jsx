@@ -6,6 +6,7 @@ const navItems = [
   { to: '/admin/requests', label: 'Requests' },
   { to: '/admin/billing-config', label: 'Billing Config' },
   { to: '/admin/kingdom-import', label: 'Kingdom Import' },
+  { to: '/admin/data-import', label: 'Data Import' },
   { to: '/admin/activity', label: 'Activity Log' },
 ];
 

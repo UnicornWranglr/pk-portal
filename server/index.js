@@ -20,6 +20,7 @@ app.use('/api/admin/requests', verifyToken, requireAdmin, require('./routes/admi
 app.use('/api/admin/billing', verifyToken, requireAdmin, require('./routes/admin/billing'));
 app.use('/api/admin/activity', verifyToken, requireAdmin, require('./routes/admin/activity'));
 app.use('/api/admin/kingdom', verifyToken, requireAdmin, require('./routes/admin/kingdom'));
+app.use('/api/admin/data-import', verifyToken, requireAdmin, require('./routes/admin/dataimport'));
 
 // Client portal routes
 app.use('/api/portal/users', verifyToken, requireClient, clientScope, require('./routes/portal/users'));

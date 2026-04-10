@@ -101,6 +101,15 @@ pk-portal/
 
 ## Changelog
 
+### v1.4.0 — Patch Run 3: Data Import
+- Bulk client & user import page at `/admin/data-import`
+- Accepts CSV/Excel with columns: client_name, user_name, user_type, kingdom_license, added_date, status
+- Preview mode: groups by client, flags issues (missing fields, invalid types)
+- Auto-creates clients that don't exist, skips duplicate users
+- Smart column detection (flexible header naming)
+- Handles legacy "kingdom" user type by mapping to standard + kingdom_license flag
+- Audit logged on confirm
+
 ### v1.3.0 — Patch Run 2: Kingdom Refactor
 - Kingdom is now an add-on flag (`kingdom_license`) rather than a user type
 - User types simplified to standard and GPU only
