@@ -70,10 +70,11 @@ router.post('/import', upload.single('file'), async (req, res) => {
       dateStr = d.toISOString().slice(0, 10);
     }
 
-    // Try exact match first, then dot-to-space conversion
-    let user = nameMap.get(rawName.toLowerCase());
-    if (!user && rawName.includes('.')) {
-      const converted = rawName.split('.').map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ');
+    // Try exact match, then dot-separated conversion (normalise case first)
+    const normalised = rawName.toLowerCase();
+    let user = nameMap.get(normalised);
+    if (!user && normalised.includes('.')) {
+      const converted = normalised.split('.').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
       user = nameMap.get(converted.toLowerCase());
     }
     if (user) {
