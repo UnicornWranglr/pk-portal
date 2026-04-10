@@ -44,6 +44,9 @@ router.post('/import', upload.single('file'), async (req, res) => {
   for (const u of allUsers) {
     nameMap.set(u.display_name.toLowerCase(), u);
     if (u.email) nameMap.set(u.email.toLowerCase(), u);
+    // Also index by dot-separated format (e.g. "cecilia.morales" for "Cecilia Morales")
+    const dotForm = u.display_name.toLowerCase().replace(/\s+/g, '.');
+    nameMap.set(dotForm, u);
   }
 
   const matched = [];
@@ -67,7 +70,12 @@ router.post('/import', upload.single('file'), async (req, res) => {
       dateStr = d.toISOString().slice(0, 10);
     }
 
-    const user = nameMap.get(rawName.toLowerCase());
+    // Try exact match first, then dot-to-space conversion
+    let user = nameMap.get(rawName.toLowerCase());
+    if (!user && rawName.includes('.')) {
+      const converted = rawName.split('.').map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ');
+      user = nameMap.get(converted.toLowerCase());
+    }
     if (user) {
       matched.push({ user_id: user.id, display_name: user.display_name, date: dateStr });
     } else {
