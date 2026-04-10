@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api';
+import { formatDate } from '../../utils';
 
 export default function Clients() {
   const [clients, setClients] = useState([]);
@@ -60,6 +61,7 @@ export default function Clients() {
             <tr>
               <th className="text-left px-4 py-3 font-medium">Name</th>
               <th className="text-left px-4 py-3 font-medium">Contact Email</th>
+              <th className="text-left px-4 py-3 font-medium">Billing Contact</th>
               <th className="text-left px-4 py-3 font-medium">Active Users</th>
               <th className="text-left px-4 py-3 font-medium">Created</th>
             </tr>
@@ -70,9 +72,12 @@ export default function Clients() {
                 <td className="px-4 py-3">
                   <Link to={`/admin/clients/${c.id}`} className="text-blue-600 hover:underline font-medium">{c.name}</Link>
                 </td>
-                <td className="px-4 py-3 text-gray-600">{c.contact_email}</td>
-                <td className="px-4 py-3">{c.active_users}</td>
-                <td className="px-4 py-3 text-gray-500">{new Date(c.created_at).toLocaleDateString()}</td>
+                <td className="px-4 py-3 text-gray-600">{c.contact_email || '—'}</td>
+                <td className="px-4 py-3 text-gray-600">{c.billing_contact || '—'}</td>
+                <td className="px-4 py-3">
+                  <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs font-medium">{c.active_users}</span>
+                </td>
+                <td className="px-4 py-3 text-gray-500">{formatDate(c.created_at)}</td>
               </tr>
             ))}
           </tbody>

@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import AdminLayout from './components/AdminLayout';
 import PortalLayout from './components/PortalLayout';
 import Login from './pages/Login';
+import Dashboard from './pages/admin/Dashboard';
 import Clients from './pages/admin/Clients';
 import ClientDetail from './pages/admin/ClientDetail';
 import AdminRequests from './pages/admin/Requests';
@@ -23,7 +24,7 @@ function RequireAuth({ role, children }) {
 function RootRedirect() {
   const { user } = useAuth();
   if (!user) return <Login />;
-  if (user.role === 'admin') return <Navigate to="/admin/clients" />;
+  if (user.role === 'admin') return <Navigate to="/admin/dashboard" />;
   return <Navigate to="/portal/users" />;
 }
 
@@ -36,7 +37,8 @@ export default function App() {
 
           {/* Admin */}
           <Route path="/admin" element={<RequireAuth role="admin"><AdminLayout /></RequireAuth>}>
-            <Route index element={<Navigate to="clients" />} />
+            <Route index element={<Navigate to="dashboard" />} />
+            <Route path="dashboard" element={<Dashboard />} />
             <Route path="clients" element={<Clients />} />
             <Route path="clients/:id" element={<ClientDetail />} />
             <Route path="requests" element={<AdminRequests />} />

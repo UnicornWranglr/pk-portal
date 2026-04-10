@@ -101,6 +101,16 @@ pk-portal/
 
 ## Changelog
 
+### v1.5.0 — Patch Run 4: Dashboard, Billing & UX
+- Admin dashboard as default landing page (summary cards, activity feed, client overview)
+- Pending requests count badge on sidebar nav item (polls every 30s)
+- Billing tab: month/year selector with Generate Bill button (replaces raw date inputs)
+- Kingdom calendar modal: usage summary with calculated charge and fair-use cap indicator
+- Billing Config: side-by-side current values vs edit form, save confirmation with tick
+- Clients list: billing contact column, active user count badge
+- Dates displayed as DD/MM/YYYY throughout (shared `formatDate` utility)
+- Client detail header shows billing contact email
+
 ### v1.4.0 — Patch Run 3: Data Import
 - Bulk client & user import page at `/admin/data-import`
 - Accepts CSV/Excel with columns: client_name, user_name, user_type, kingdom_license, added_date, status

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../../api';
+import { formatDate } from '../../utils';
 
 const typeColors = { standard: 'bg-blue-100 text-blue-700', gpu: 'bg-amber-100 text-amber-700' };
 const statusColors = { active: 'bg-green-100 text-green-700', paused: 'bg-gray-200 text-gray-600', pending_removal: 'bg-yellow-100 text-yellow-700' };
@@ -35,7 +36,7 @@ export default function PortalUsers() {
                 <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[u.status] || ''}`}>{u.status}</span></td>
                 <td className="px-4 py-3 text-gray-600">{u.project_name || '—'}</td>
                 <td className="px-4 py-3">{u.requires_office_license ? <span className="text-green-600 text-xs font-medium">Yes</span> : <span className="text-gray-400 text-xs">No</span>}</td>
-                <td className="px-4 py-3 text-gray-500">{u.added_date}</td>
+                <td className="px-4 py-3 text-gray-500">{formatDate(u.added_date)}</td>
               </tr>
             ))}
           </tbody>
