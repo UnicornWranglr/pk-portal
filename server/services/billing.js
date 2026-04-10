@@ -7,11 +7,17 @@ function calcCharge(daysActive, dailyRate, monthlyRate) {
 }
 
 function daysInRange(addedDate, endDate, periodStart, periodEnd) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
   const start = new Date(Math.max(new Date(addedDate), new Date(periodStart)));
-  const end = new Date(Math.min(
-    endDate ? new Date(endDate) : new Date(periodEnd),
-    new Date(periodEnd)
-  ));
+
+  // End date is the earliest of: user end_date, period end, or today
+  // This prevents charging for future days that haven't occurred yet
+  const candidates = [new Date(periodEnd), today];
+  if (endDate) candidates.push(new Date(endDate));
+  const end = new Date(Math.min(...candidates.map(d => d.getTime())));
+
   if (start > end) return 0;
   return Math.floor((end - start) / (1000 * 60 * 60 * 24)) + 1; // inclusive
 }
@@ -26,13 +32,16 @@ async function generateBilling(clientId, periodStart, periodEnd, adminUserId) {
     );
     if (!config) throw new Error('No billing config found');
 
+    const today = new Date().toISOString().slice(0, 10);
+
     // Active users during this period — exclude paused and removed
+    // Only include users whose added_date is on or before today AND the period end
     const { rows: users } = await dbClient.query(
       `SELECT * FROM users WHERE client_id = $1
-       AND added_date <= $3
+       AND added_date <= LEAST($3::date, $4::date)
        AND (end_date IS NULL OR end_date >= $2)
        AND status NOT IN ('paused', 'removed')`,
-      [clientId, periodStart, periodEnd]
+      [clientId, periodStart, periodEnd, today]
     );
 
     const lineItems = [];
@@ -65,11 +74,12 @@ async function generateBilling(clientId, periodStart, periodEnd, adminUserId) {
       }
 
       // Kingdom charge — based on actual usage days from kingdom_usage table
+      // Only count usage days up to today (no future dates)
       if (user.kingdom_license) {
         const { rows: [{ count: usageDaysStr }] } = await dbClient.query(
           `SELECT COUNT(DISTINCT usage_date) FROM kingdom_usage
-           WHERE user_id = $1 AND usage_date >= $2 AND usage_date <= $3`,
-          [user.id, periodStart, periodEnd]
+           WHERE user_id = $1 AND usage_date >= $2 AND usage_date <= LEAST($3::date, $4::date)`,
+          [user.id, periodStart, periodEnd, today]
         );
         const kingdomDays = parseInt(usageDaysStr);
         item.kingdom_usage_days = kingdomDays;
