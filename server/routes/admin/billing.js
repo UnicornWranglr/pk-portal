@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const pool = require('../../db/pool');
-const { generateBilling } = require('../../services/billing');
+const { previewBilling, saveBilling } = require('../../services/billing');
 const { logAction, getIp } = require('../../services/audit');
 
 const router = Router();
@@ -19,7 +19,6 @@ router.put('/config', async (req, res) => {
     setup_fee, fair_use_threshold_days,
   } = req.body;
 
-  // Capture old values for audit
   const { rows: [old] } = await pool.query('SELECT standard_daily, standard_monthly, kingdom_addon_daily, kingdom_addon_monthly, gpu_daily, gpu_monthly, setup_fee, fair_use_threshold_days FROM billing_config ORDER BY id DESC LIMIT 1');
 
   const { rows } = await pool.query(
@@ -43,17 +42,51 @@ router.put('/config', async (req, res) => {
   res.json(rows[0]);
 });
 
+// Preview billing — read-only, no side effects
 router.post('/generate/:clientId', async (req, res) => {
   const { period_start, period_end } = req.body;
   if (!period_start || !period_end) {
     return res.status(400).json({ error: 'period_start and period_end required' });
   }
-  const result = await generateBilling(
-    parseInt(req.params.clientId), period_start, period_end, req.user.id
-  );
-
-  logAction({ action: 'generate_billing', entityType: 'billing_period', entityId: result.id, actorType: 'admin', actorId: req.user.id, actorName: req.user.name, clientId: parseInt(req.params.clientId), details: { period_start, period_end, total: result.total, line_item_count: (result.line_items || []).length }, ip: getIp(req) });
+  const result = await previewBilling(parseInt(req.params.clientId), period_start, period_end);
   res.json(result);
+});
+
+// Save billing — transactional, marks setup fees
+router.post('/save/:clientId', async (req, res) => {
+  const { period_start, period_end, line_items, total } = req.body;
+  if (!period_start || !period_end || !line_items) {
+    return res.status(400).json({ error: 'period_start, period_end, and line_items required' });
+  }
+  const result = await saveBilling(
+    parseInt(req.params.clientId), period_start, period_end, line_items, total, req.user.id
+  );
+  logAction({ action: 'save_billing', entityType: 'billing_period', entityId: result.id, actorType: 'admin', actorId: req.user.id, actorName: req.user.name, clientId: parseInt(req.params.clientId), details: { period_start, period_end, total }, ip: getIp(req) });
+  res.json(result);
+});
+
+// Mark bill as sent
+router.put('/periods/:id/send', async (req, res) => {
+  const { rows } = await pool.query(
+    'UPDATE billing_periods SET sent_at = NOW() WHERE id = $1 RETURNING *',
+    [req.params.id]
+  );
+  if (rows.length === 0) return res.status(404).json({ error: 'Billing period not found' });
+  logAction({ action: 'mark_bill_sent', entityType: 'billing_period', entityId: rows[0].id, actorType: 'admin', actorId: req.user.id, actorName: req.user.name, clientId: rows[0].client_id, ip: getIp(req) });
+  res.json(rows[0]);
+});
+
+// Unbilled clients count (no bill for previous month)
+router.get('/unbilled-count', async (req, res) => {
+  const { rows: [{ count }] } = await pool.query(
+    `SELECT COUNT(*) FROM clients c
+     WHERE NOT EXISTS (
+       SELECT 1 FROM billing_periods bp
+       WHERE bp.client_id = c.id
+       AND bp.period_start = date_trunc('month', CURRENT_DATE - INTERVAL '1 month')::date
+     )`
+  );
+  res.json({ count: parseInt(count) });
 });
 
 router.get('/periods/:clientId', async (req, res) => {

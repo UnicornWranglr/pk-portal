@@ -24,12 +24,12 @@ export default function Dashboard() {
     <div>
       <h2 className="text-xl font-bold mb-6">Dashboard</h2>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-5 gap-4 mb-8">
         <Card label="Active Clients" value={summary.total_clients} />
         <Card label="Active Users" value={summary.total_active_users} />
         <Card label="Pending Requests" value={summary.pending_requests} link="/admin/requests" highlight={summary.pending_requests > 0} />
         <Card label="Actioned This Month" value={summary.actioned_this_month} />
+        <Card label="Unbilled (Last Month)" value={summary.unbilled_last_month} link="/admin/clients" highlight={summary.unbilled_last_month > 0} />
       </div>
 
       <div className="grid grid-cols-2 gap-6">
@@ -74,8 +74,11 @@ export default function Dashboard() {
                     {parseInt(c.pending_requests) > 0 && (
                       <span className="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded font-medium">{c.pending_requests} pending</span>
                     )}
-                    {c.last_billing_total && (
-                      <span className="text-gray-400">Last bill: &pound;{parseFloat(c.last_billing_total).toFixed(2)}</span>
+                    {c.last_billed_month && (
+                      <span className="text-gray-400">Billed: {c.last_billed_month}</span>
+                    )}
+                    {c.last_bill_approved !== null && c.last_bill_approved !== undefined && (
+                      c.last_bill_approved ? <span className="text-green-600 font-medium">Approved</span> : <span className="text-amber-500">Awaiting</span>
                     )}
                   </div>
                 </div>

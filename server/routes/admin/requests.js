@@ -37,6 +37,9 @@ router.put('/:id/action', async (req, res) => {
       return res.status(404).json({ error: 'Pending request not found' });
     }
 
+    const today = new Date().toISOString().slice(0, 10);
+    const effectiveDate = req.body.effective_date || today;
+
     if (request.type === 'add') {
       await dbClient.query(
         `INSERT INTO users (client_id, display_name, email, user_type, added_date, requires_office_license, project_id, kingdom_license)
@@ -46,7 +49,7 @@ router.put('/:id/action', async (req, res) => {
           request.requested_user_name,
           request.requested_user_email,
           request.requested_user_type,
-          request.requested_start_date || new Date().toISOString().slice(0, 10),
+          effectiveDate,
           request.requested_office_license || false,
           request.requested_project_id || null,
           request.requested_kingdom_license || false,
@@ -54,8 +57,8 @@ router.put('/:id/action', async (req, res) => {
       );
     } else if (request.type === 'remove') {
       await dbClient.query(
-        `UPDATE users SET status = 'pending_removal', end_date = $1 WHERE id = $2`,
-        [request.requested_end_date || new Date().toISOString().slice(0, 10), request.user_id]
+        `UPDATE users SET status = 'removed', removed_date = $1 WHERE id = $2`,
+        [effectiveDate, request.user_id]
       );
     } else if (request.type === 'change_type') {
       const updates = ['user_type = COALESCE($1, user_type)'];
@@ -69,17 +72,23 @@ router.put('/:id/action', async (req, res) => {
         `UPDATE users SET ${updates.join(', ')} WHERE id = $${params.length}`,
         params
       );
+    } else if (request.type === 'move_project') {
+      await dbClient.query(
+        'UPDATE users SET project_id = $1 WHERE id = $2',
+        [request.requested_project_id, request.user_id]
+      );
     }
 
     await dbClient.query(
-      `UPDATE requests SET status = 'actioned', actioned_at = NOW(), actioned_by = $1, admin_notes = $2 WHERE id = $3`,
-      [req.user.id, req.body.admin_notes || null, req.params.id]
+      `UPDATE requests SET status = 'actioned', actioned_at = NOW(), actioned_by = $1, admin_notes = $2, effective_date = $3 WHERE id = $4`,
+      [req.user.id, req.body.admin_notes || null, effectiveDate, req.params.id]
     );
 
     // Create notification for the requesting client user
     if (request.requested_by) {
-      const actionLabel = request.type === 'add' ? 'add' : request.type === 'remove' ? 'removal' : 'type change';
-      const userName = request.requested_user_name || request.target_user_name || 'a user';
+      const actionLabels = { add: 'add', remove: 'removal', change_type: 'type change', move_project: 'project move' };
+      const actionLabel = actionLabels[request.type] || request.type;
+      const userName = request.requested_user_name || 'a user';
       await dbClient.query(
         `INSERT INTO notifications (client_user_id, request_id, message) VALUES ($1, $2, $3)`,
         [request.requested_by, request.id, `Your ${actionLabel} request for ${userName} has been actioned.`]
@@ -88,7 +97,7 @@ router.put('/:id/action', async (req, res) => {
 
     await dbClient.query('COMMIT');
 
-    logAction({ action: 'action_request', entityType: 'request', entityId: request.id, actorType: 'admin', actorId: req.user.id, actorName: req.user.name, clientId: request.client_id, details: { type: request.type, requested_user_name: request.requested_user_name, admin_notes: req.body.admin_notes }, ip: getIp(req) });
+    logAction({ action: 'action_request', entityType: 'request', entityId: request.id, actorType: 'admin', actorId: req.user.id, actorName: req.user.name, clientId: request.client_id, details: { type: request.type, requested_user_name: request.requested_user_name, admin_notes: req.body.admin_notes, effective_date: effectiveDate }, ip: getIp(req) });
     res.json({ message: 'Request actioned' });
   } catch (err) {
     await dbClient.query('ROLLBACK');
@@ -107,8 +116,6 @@ router.put('/:id/reject', async (req, res) => {
   if (rows.length === 0) return res.status(404).json({ error: 'Pending request not found' });
 
   const request = rows[0];
-
-  // Notify the requesting client user
   if (request.requested_by) {
     const userName = request.requested_user_name || 'a user';
     pool.query(

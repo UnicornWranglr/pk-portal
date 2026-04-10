@@ -28,6 +28,7 @@ app.use('/api/portal/users', verifyToken, requireClient, clientScope, require('.
 app.use('/api/portal/requests', verifyToken, requireClient, clientScope, require('./routes/portal/requests'));
 app.use('/api/portal/projects', verifyToken, requireClient, clientScope, require('./routes/portal/projects'));
 app.use('/api/portal/notifications', verifyToken, requireClient, clientScope, require('./routes/portal/notifications'));
+app.use('/api/portal/billing', verifyToken, requireClient, clientScope, require('./routes/portal/billing'));
 
 // Serve static frontend in production
 const clientBuild = path.join(__dirname, '..', 'client', 'dist');

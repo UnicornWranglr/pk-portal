@@ -5,6 +5,7 @@ import NotificationBell from './NotificationBell';
 const navItems = [
   { to: '/portal/users', label: 'Users' },
   { to: '/portal/requests', label: 'Requests' },
+  { to: '/portal/billing', label: 'Billing' },
 ];
 
 export default function PortalLayout() {

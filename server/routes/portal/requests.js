@@ -24,8 +24,8 @@ router.post('/', async (req, res) => {
     requested_office_license, requested_kingdom_license, requested_project_id, notes,
   } = req.body;
 
-  if (!type || !['add', 'remove', 'change_type'].includes(type)) {
-    return res.status(400).json({ error: 'Valid type required: add, remove, change_type' });
+  if (!type || !['add', 'remove', 'change_type', 'move_project'].includes(type)) {
+    return res.status(400).json({ error: 'Valid type required: add, remove, change_type, move_project' });
   }
 
   if (type === 'add' && (!requested_user_name || !requested_user_type)) {
@@ -36,7 +36,11 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'user_id required for remove/change_type requests' });
   }
 
-  // Verify user belongs to this client for remove/change_type
+  if (type === 'move_project' && (!user_id || !requested_project_id)) {
+    return res.status(400).json({ error: 'user_id and requested_project_id required for move_project requests' });
+  }
+
+  // Verify user belongs to this client for remove/change_type/move_project
   if (user_id) {
     const { rows } = await pool.query(
       'SELECT id FROM users WHERE id = $1 AND client_id = $2',
@@ -61,7 +65,7 @@ router.post('/', async (req, res) => {
     ]
   );
 
-  logAction({ action: 'submit_request', entityType: 'request', entityId: rows[0].id, actorType: 'client', actorId: req.user.id, actorName: req.user.name, clientId: req.clientId, details: { type, requested_user_name, requested_user_type, requested_office_license, requested_project_id }, ip: getIp(req) });
+  logAction({ action: 'submit_request', entityType: 'request', entityId: rows[0].id, actorType: 'client', actorId: req.user.id, actorName: req.user.name, clientId: req.clientId, details: { type, requested_user_name, requested_user_type, requested_project_id }, ip: getIp(req) });
   res.status(201).json(rows[0]);
 });
 

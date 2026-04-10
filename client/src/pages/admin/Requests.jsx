@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { api } from '../../api';
+import { formatDate } from '../../utils';
 
 export default function Requests() {
   const [requests, setRequests] = useState([]);
   const [filter, setFilter] = useState('pending');
   const [actionNotes, setActionNotes] = useState({});
+  const [effectiveDates, setEffectiveDates] = useState({});
 
   useEffect(() => { loadRequests(); }, [filter]);
 
@@ -13,8 +15,12 @@ export default function Requests() {
   }
 
   async function handleAction(id) {
-    await api.put(`/admin/requests/${id}/action`, { admin_notes: actionNotes[id] || null });
+    await api.put(`/admin/requests/${id}/action`, {
+      admin_notes: actionNotes[id] || null,
+      effective_date: effectiveDates[id] || new Date().toISOString().slice(0, 10),
+    });
     setActionNotes({ ...actionNotes, [id]: '' });
+    setEffectiveDates({ ...effectiveDates, [id]: '' });
     loadRequests();
   }
 
@@ -24,7 +30,10 @@ export default function Requests() {
     loadRequests();
   }
 
-  const typeBadge = { add: 'bg-green-100 text-green-700', remove: 'bg-red-100 text-red-700', change_type: 'bg-blue-100 text-blue-700' };
+  const typeBadge = {
+    add: 'bg-green-100 text-green-700', remove: 'bg-red-100 text-red-700',
+    change_type: 'bg-blue-100 text-blue-700', move_project: 'bg-purple-100 text-purple-700',
+  };
 
   return (
     <div>
@@ -58,7 +67,7 @@ export default function Requests() {
               <tr key={r.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium">{r.client_name}</td>
                 <td className="px-4 py-3">
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${typeBadge[r.type]}`}>{r.type}</span>
+                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${typeBadge[r.type] || 'bg-gray-100'}`}>{r.type === 'move_project' ? 'move project' : r.type}</span>
                 </td>
                 <td className="px-4 py-3 text-gray-600 text-xs">
                   {r.type === 'add' && (
@@ -67,18 +76,26 @@ export default function Requests() {
                       {r.requested_kingdom_license && <span className="ml-1 text-purple-600">[Kingdom]</span>}
                       {r.requested_office_license && <span className="ml-1 text-blue-600">[Office]</span>}
                       {r.project_name && <span className="ml-1 text-gray-500">[{r.project_name}]</span>}
-                      {r.requested_start_date && <div className="text-gray-400 mt-0.5">Start: {r.requested_start_date}</div>}
+                      {r.requested_start_date && <div className="text-gray-400 mt-0.5">Start: {formatDate(r.requested_start_date)}</div>}
                     </div>
                   )}
-                  {r.type === 'remove' && `${r.target_user_name || 'User #' + r.user_id} — end: ${r.requested_end_date || 'ASAP'}`}
+                  {r.type === 'remove' && `${r.target_user_name || 'User #' + r.user_id} — end: ${r.requested_end_date ? formatDate(r.requested_end_date) : 'ASAP'}`}
                   {r.type === 'change_type' && `${r.target_user_name || 'User #' + r.user_id} → ${r.requested_user_type}`}
+                  {r.type === 'move_project' && `${r.target_user_name || 'User #' + r.user_id} → ${r.project_name || 'Project #' + r.requested_project_id}`}
                 </td>
                 <td className="px-4 py-3 text-gray-500 text-xs max-w-[150px]">{r.notes || '—'}</td>
                 <td className="px-4 py-3">{r.requested_by_name}</td>
-                <td className="px-4 py-3 text-gray-500 text-xs">{new Date(r.submitted_at).toLocaleString()}</td>
+                <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(r.submitted_at, true)}</td>
                 {filter === 'pending' && (
                   <td className="px-4 py-3">
                     <div className="space-y-2">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-0.5">Effective date</label>
+                        <input type="date"
+                          value={effectiveDates[r.id] || new Date().toISOString().slice(0, 10)}
+                          onChange={e => setEffectiveDates({ ...effectiveDates, [r.id]: e.target.value })}
+                          className="w-full border rounded px-2 py-1 text-xs" />
+                      </div>
                       <textarea
                         value={actionNotes[r.id] || ''}
                         onChange={e => setActionNotes({ ...actionNotes, [r.id]: e.target.value })}
@@ -94,7 +111,10 @@ export default function Requests() {
                   </td>
                 )}
                 {filter !== 'pending' && (
-                  <td className="px-4 py-3 text-gray-500 text-xs max-w-[150px]">{r.admin_notes || '—'}</td>
+                  <td className="px-4 py-3 text-gray-500 text-xs max-w-[150px]">
+                    {r.admin_notes || '—'}
+                    {r.effective_date && <div className="text-gray-400 mt-0.5">Effective: {formatDate(r.effective_date)}</div>}
+                  </td>
                 )}
               </tr>
             ))}

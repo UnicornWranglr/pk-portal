@@ -4,13 +4,21 @@ const pool = require('../../db/pool');
 const router = Router();
 
 router.get('/', async (req, res) => {
-  const [clients, users, pendingRequests, actionedThisMonth, recentActivity, clientStats] = await Promise.all([
+  const [clients, users, pendingRequests, actionedThisMonth, unbilledCount, recentActivity, clientStats] = await Promise.all([
     pool.query(`SELECT COUNT(*) FROM clients`),
     pool.query(`SELECT COUNT(*) FROM users WHERE status = 'active'`),
     pool.query(`SELECT COUNT(*) FROM requests WHERE status = 'pending'`),
     pool.query(
       `SELECT COUNT(*) FROM requests WHERE status = 'actioned'
        AND actioned_at >= date_trunc('month', CURRENT_DATE)`
+    ),
+    pool.query(
+      `SELECT COUNT(*) FROM clients c
+       WHERE NOT EXISTS (
+         SELECT 1 FROM billing_periods bp
+         WHERE bp.client_id = c.id
+         AND bp.period_start = date_trunc('month', CURRENT_DATE - INTERVAL '1 month')::date
+       )`
     ),
     pool.query(
       `SELECT a.*, c.name AS client_name
@@ -23,7 +31,8 @@ router.get('/', async (req, res) => {
          COUNT(u.id) FILTER (WHERE u.status = 'active') AS active_users,
          COUNT(r.id) FILTER (WHERE r.status = 'pending') AS pending_requests,
          (SELECT total FROM billing_periods bp WHERE bp.client_id = c.id ORDER BY bp.generated_at DESC LIMIT 1) AS last_billing_total,
-         (SELECT bp.period_end FROM billing_periods bp WHERE bp.client_id = c.id ORDER BY bp.generated_at DESC LIMIT 1) AS last_billing_period
+         (SELECT TO_CHAR(bp.period_end, 'Mon YYYY') FROM billing_periods bp WHERE bp.client_id = c.id ORDER BY bp.generated_at DESC LIMIT 1) AS last_billed_month,
+         (SELECT bp.client_approved FROM billing_periods bp WHERE bp.client_id = c.id ORDER BY bp.generated_at DESC LIMIT 1) AS last_bill_approved
        FROM clients c
        LEFT JOIN users u ON u.client_id = c.id
        LEFT JOIN requests r ON r.client_id = c.id AND r.status = 'pending'
@@ -38,6 +47,7 @@ router.get('/', async (req, res) => {
       total_active_users: parseInt(users.rows[0].count),
       pending_requests: parseInt(pendingRequests.rows[0].count),
       actioned_this_month: parseInt(actionedThisMonth.rows[0].count),
+      unbilled_last_month: parseInt(unbilledCount.rows[0].count),
     },
     recent_activity: recentActivity.rows,
     client_stats: clientStats.rows,

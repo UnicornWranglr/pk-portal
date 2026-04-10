@@ -7,6 +7,16 @@ const { logAction, getIp } = require('../../services/audit');
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+function getCurrentMonthRange() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth(); // 0-indexed
+  const start = `${y}-${String(m + 1).padStart(2, '0')}-01`;
+  const lastDay = new Date(y, m + 1, 0).getDate();
+  const end = `${y}-${String(m + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  return { start, end, label: `${now.toLocaleString('en-GB', { month: 'long' })} ${y}` };
+}
+
 router.post('/import', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'File required' });
 
@@ -21,10 +31,8 @@ router.post('/import', upload.single('file'), async (req, res) => {
 
   if (rows.length === 0) return res.status(400).json({ error: 'File contains no data rows' });
 
-  // Detect column names — look for common patterns
   const firstRow = rows[0];
   const keys = Object.keys(firstRow);
-
   const userCol = keys.find(k => /user|name|username|display/i.test(k));
   const dateCol = keys.find(k => /date|day|usage/i.test(k));
 
@@ -35,7 +43,7 @@ router.post('/import', upload.single('file'), async (req, res) => {
     });
   }
 
-  // Fetch all users for matching
+  // Fetch all kingdom-licensed users
   const { rows: allUsers } = await pool.query(
     `SELECT id, display_name, email, client_id FROM users WHERE kingdom_license = TRUE`
   );
@@ -44,13 +52,15 @@ router.post('/import', upload.single('file'), async (req, res) => {
   for (const u of allUsers) {
     nameMap.set(u.display_name.toLowerCase(), u);
     if (u.email) nameMap.set(u.email.toLowerCase(), u);
-    // Also index by dot-separated format (e.g. "cecilia.morales" for "Cecilia Morales")
     const dotForm = u.display_name.toLowerCase().replace(/\s+/g, '.');
     nameMap.set(dotForm, u);
   }
 
+  const { start: monthStart, end: monthEnd, label: monthLabel } = getCurrentMonthRange();
+
   const matched = [];
   const unmatched = [];
+  let skipped = 0;
 
   for (const row of rows) {
     const rawName = String(row[userCol] || '').trim();
@@ -70,7 +80,13 @@ router.post('/import', upload.single('file'), async (req, res) => {
       dateStr = d.toISOString().slice(0, 10);
     }
 
-    // Try exact match, then dot-separated conversion (normalise case first)
+    // Filter to current month only
+    if (dateStr < monthStart || dateStr > monthEnd) {
+      skipped++;
+      continue;
+    }
+
+    // Match username
     const normalised = rawName.toLowerCase();
     let user = nameMap.get(normalised);
     if (!user && normalised.includes('.')) {
@@ -84,27 +100,73 @@ router.post('/import', upload.single('file'), async (req, res) => {
     }
   }
 
-  // If confirm=true in body, actually insert
+  // Confirm mode — replace existing imported entries for this month, then insert
   if (req.query.confirm === 'true') {
-    let inserted = 0;
-    for (const m of matched) {
-      try {
-        await pool.query(
+    const dbClient = await pool.connect();
+    try {
+      await dbClient.query('BEGIN');
+
+      // Delete existing imported entries for current month (replace, not duplicate)
+      const matchedUserIds = [...new Set(matched.map(m => m.user_id))];
+      if (matchedUserIds.length > 0) {
+        await dbClient.query(
+          `DELETE FROM kingdom_usage WHERE source = 'imported'
+           AND usage_date >= $1 AND usage_date <= $2
+           AND user_id = ANY($3)`,
+          [monthStart, monthEnd, matchedUserIds]
+        );
+      }
+
+      let inserted = 0;
+      for (const m of matched) {
+        await dbClient.query(
           `INSERT INTO kingdom_usage (user_id, usage_date, source) VALUES ($1, $2, 'imported')
            ON CONFLICT (user_id, usage_date) DO NOTHING`,
           [m.user_id, m.date]
         );
         inserted++;
-      } catch { /* skip duplicates */ }
+      }
+
+      await dbClient.query('COMMIT');
+
+      // Build verification summary — per-user breakdown with calculated charges
+      const { rows: [config] } = await pool.query('SELECT kingdom_addon_daily, kingdom_addon_monthly FROM billing_config ORDER BY id DESC LIMIT 1');
+
+      const userDays = {};
+      for (const m of matched) {
+        if (!userDays[m.user_id]) userDays[m.user_id] = { display_name: m.display_name, days: new Set() };
+        userDays[m.user_id].days.add(m.date);
+      }
+
+      const verification = Object.values(userDays).map(u => {
+        const days = u.days.size;
+        const dailyTotal = days * parseFloat(config.kingdom_addon_daily);
+        const monthly = parseFloat(config.kingdom_addon_monthly);
+        const charge = dailyTotal >= monthly ? monthly : dailyTotal;
+        const rate_applied = dailyTotal >= monthly ? 'monthly' : 'daily';
+        return { display_name: u.display_name, days, charge: Math.round(charge * 100) / 100, rate_applied };
+      }).sort((a, b) => a.display_name.localeCompare(b.display_name));
+
+      const totalDays = verification.reduce((s, v) => s + v.days, 0);
+      const totalCharge = verification.reduce((s, v) => s + v.charge, 0);
+
+      logAction({ action: 'import_kingdom_usage', entityType: 'kingdom_usage', actorType: 'admin', actorId: req.user.id, actorName: req.user.name, details: { filename: req.file.originalname, month: monthLabel, matched: matched.length, unmatched: unmatched.length, skipped, inserted }, ip: getIp(req) });
+
+      return res.json({
+        message: 'Import complete',
+        inserted, month: monthLabel, skipped, unmatched,
+        verification: { users: verification, total_users: verification.length, total_days: totalDays, total_charge: Math.round(totalCharge * 100) / 100 },
+      });
+    } catch (err) {
+      await dbClient.query('ROLLBACK');
+      throw err;
+    } finally {
+      dbClient.release();
     }
-
-    logAction({ action: 'import_kingdom_usage', entityType: 'kingdom_usage', actorType: 'admin', actorId: req.user.id, actorName: req.user.name, details: { filename: req.file.originalname, matched: matched.length, unmatched: unmatched.length, inserted }, ip: getIp(req) });
-
-    return res.json({ message: 'Import complete', inserted, matched: matched.length, unmatched });
   }
 
-  // Preview mode — return matched/unmatched for review
-  res.json({ preview: true, matched, unmatched, total_rows: rows.length });
+  // Preview mode
+  res.json({ preview: true, matched, unmatched, skipped, month: monthLabel, total_rows: rows.length });
 });
 
 module.exports = router;

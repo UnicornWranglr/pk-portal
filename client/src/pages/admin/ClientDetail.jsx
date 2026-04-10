@@ -6,6 +6,18 @@ import { formatDate } from '../../utils';
 const typeColors = { standard: 'bg-blue-100 text-blue-700', gpu: 'bg-amber-100 text-amber-700' };
 const statusColors = { active: 'bg-green-100 text-green-700', paused: 'bg-gray-200 text-gray-600', pending_removal: 'bg-yellow-100 text-yellow-700', removed: 'bg-red-100 text-red-700' };
 
+// Helper to render charges — handles both old format (charges.standard/gpu) and new (charges.seat)
+function getSeatCharge(item) {
+  if (item.charges.seat) return item.charges.seat;
+  const amount = item.charges.standard || item.charges.gpu || 0;
+  return { amount, rate_applied: null };
+}
+function getKingdomCharge(item) {
+  if (item.charges.kingdom) return item.charges.kingdom;
+  if (item.charges.kingdom_addon) return { amount: item.charges.kingdom_addon, rate_applied: null, days: item.kingdom_usage_days };
+  return null;
+}
+
 export default function ClientDetail() {
   const { id } = useParams();
   const [client, setClient] = useState(null);
@@ -18,15 +30,14 @@ export default function ClientDetail() {
   const [clientForm, setClientForm] = useState({});
   const [editingUserId, setEditingUserId] = useState(null);
   const [userForm, setUserForm] = useState({});
+  const [billPreview, setBillPreview] = useState(null);
   const [selectedPeriod, setSelectedPeriod] = useState(null);
-  const [generatedPreview, setGeneratedPreview] = useState(null);
   const [newProjectName, setNewProjectName] = useState('');
   const [kingdomModal, setKingdomModal] = useState(null);
   const [kingdomMonth, setKingdomMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [kingdomDays, setKingdomDays] = useState([]);
   const [kingdomCharge, setKingdomCharge] = useState(null);
 
-  // Billing month/year selector
   const now = new Date();
   const [billMonth, setBillMonth] = useState(now.getMonth() + 1);
   const [billYear, setBillYear] = useState(now.getFullYear());
@@ -41,11 +52,7 @@ export default function ClientDetail() {
       api.get(`/admin/billing/periods/${id}`),
       api.get('/admin/billing/config'),
     ]);
-    setClient(c);
-    setUsers(u);
-    setProjects(p);
-    setBilling(b);
-    setBillingConfig(bc);
+    setClient(c); setUsers(u); setProjects(p); setBilling(b); setBillingConfig(bc);
   }
 
   // Client CRUD
@@ -53,49 +60,47 @@ export default function ClientDetail() {
     setClientForm({ name: client.name, contact_email: client.contact_email || '', billing_contact: client.billing_contact || '' });
     setEditingClient(true);
   }
-
   async function saveClient(e) {
     e.preventDefault();
     await api.put(`/admin/clients/${id}`, clientForm);
-    setEditingClient(false);
-    load();
+    setEditingClient(false); load();
   }
 
   // User editing
   function startEditUser(user) {
     setEditingUserId(user.id);
-    setUserForm({
-      display_name: user.display_name, email: user.email || '',
-      user_type: user.user_type, status: user.status,
-      end_date: user.end_date || '', requires_office_license: user.requires_office_license || false,
-      kingdom_license: user.kingdom_license || false, project_id: user.project_id || '',
-    });
+    setUserForm({ display_name: user.display_name, email: user.email || '', user_type: user.user_type, status: user.status, end_date: user.end_date || '', requires_office_license: user.requires_office_license || false, kingdom_license: user.kingdom_license || false, project_id: user.project_id || '' });
   }
-
   async function saveUser(e) {
     e.preventDefault();
-    await api.put(`/admin/users/${editingUserId}`, {
-      ...userForm, project_id: userForm.project_id ? parseInt(userForm.project_id) : null,
-    });
-    setEditingUserId(null);
-    load();
+    await api.put(`/admin/users/${editingUserId}`, { ...userForm, project_id: userForm.project_id ? parseInt(userForm.project_id) : null });
+    setEditingUserId(null); load();
   }
-
   async function handleAddProject() {
     if (!newProjectName.trim()) return;
     await api.post(`/admin/clients/${id}/projects`, { name: newProjectName.trim() });
-    setNewProjectName('');
-    load();
+    setNewProjectName(''); load();
   }
 
-  // Billing — generate preview then save
-  async function handleGenerateBill() {
+  // Billing — preview then save
+  async function handlePreviewBill() {
     const daysInMonth = new Date(billYear, billMonth, 0).getDate();
     const period_start = `${billYear}-${String(billMonth).padStart(2, '0')}-01`;
     const period_end = `${billYear}-${String(billMonth).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
     const result = await api.post(`/admin/billing/generate/${id}`, { period_start, period_end });
-    setGeneratedPreview(result);
+    setBillPreview({ ...result, period_start, period_end });
     setSelectedPeriod(null);
+  }
+  async function handleSaveBill() {
+    if (!billPreview) return;
+    const saved = await api.post(`/admin/billing/save/${id}`, {
+      period_start: billPreview.period_start, period_end: billPreview.period_end,
+      line_items: billPreview.line_items, total: billPreview.total,
+    });
+    setBillPreview(null); setSelectedPeriod(saved); load();
+  }
+  async function handleMarkSent(periodId) {
+    await api.put(`/admin/billing/periods/${periodId}/send`);
     load();
   }
 
@@ -104,34 +109,26 @@ export default function ClientDetail() {
     setKingdomModal({ userId: user.id, userName: user.display_name });
     await loadKingdomDays(user.id, kingdomMonth);
   }
-
   async function loadKingdomDays(userId, month) {
     const days = await api.get(`/admin/users/${userId}/kingdom-usage?month=${month}`);
     setKingdomDays(days);
-    // Calculate charge
     if (billingConfig && days.length > 0) {
       const dailyTotal = days.length * parseFloat(billingConfig.kingdom_addon_daily);
       const monthlyRate = parseFloat(billingConfig.kingdom_addon_monthly);
       setKingdomCharge(dailyTotal >= monthlyRate ? monthlyRate : dailyTotal);
-    } else {
-      setKingdomCharge(0);
-    }
+    } else { setKingdomCharge(0); }
   }
-
   async function toggleKingdomDay(date) {
     const exists = kingdomDays.some(d => d.usage_date === date || d.usage_date?.slice(0, 10) === date);
     await api.put(`/admin/users/${kingdomModal.userId}/kingdom-usage`, { date, active: !exists });
     await loadKingdomDays(kingdomModal.userId, kingdomMonth);
   }
-
   function changeKingdomMonth(delta) {
     const d = new Date(kingdomMonth + '-01');
     d.setMonth(d.getMonth() + delta);
-    const newMonth = d.toISOString().slice(0, 7);
-    setKingdomMonth(newMonth);
-    loadKingdomDays(kingdomModal.userId, newMonth);
+    const m = d.toISOString().slice(0, 7);
+    setKingdomMonth(m); loadKingdomDays(kingdomModal.userId, m);
   }
-
   function renderCalendar() {
     const year = parseInt(kingdomMonth.slice(0, 4));
     const month = parseInt(kingdomMonth.slice(5, 7)) - 1;
@@ -142,14 +139,11 @@ export default function ClientDetail() {
     const cells = [];
     for (let i = 0; i < firstDay; i++) cells.push(<div key={`e${i}`} />);
     for (let day = 1; day <= daysInMonth; day++) {
-      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      const isActive = daySet.has(dateStr);
-      const isToday = dateStr === today;
+      const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const isActive = daySet.has(ds);
       cells.push(
-        <button key={day} onClick={() => toggleKingdomDay(dateStr)}
-          className={`h-9 w-9 rounded text-sm font-medium transition-colors
-            ${isActive ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}
-            ${isToday ? 'ring-2 ring-purple-400' : ''}`}>
+        <button key={day} onClick={() => toggleKingdomDay(ds)}
+          className={`h-9 w-9 rounded text-sm font-medium transition-colors ${isActive ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} ${ds === today ? 'ring-2 ring-purple-400' : ''}`}>
           {day}
         </button>
       );
@@ -159,11 +153,16 @@ export default function ClientDetail() {
 
   if (!client) return <p>Loading...</p>;
 
-  const activeBill = generatedPreview || selectedPeriod;
+  const activeBill = billPreview || selectedPeriod;
+  const activeBillItems = activeBill?.line_items || [];
+
+  // Subtotals
+  const stdTotal = activeBillItems.filter(i => i.user_type === 'standard').reduce((s, i) => s + i.total, 0);
+  const gpuTotal = activeBillItems.filter(i => i.user_type === 'gpu').reduce((s, i) => s + i.total, 0);
 
   return (
     <div>
-      {/* Kingdom Usage Modal */}
+      {/* Kingdom Modal */}
       {kingdomModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-6 w-[420px]">
@@ -177,30 +176,19 @@ export default function ClientDetail() {
               <button onClick={() => changeKingdomMonth(1)} className="text-sm text-gray-500 hover:text-gray-700">Next &rarr;</button>
             </div>
             <div className="grid grid-cols-7 gap-1 text-center mb-2">
-              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
-                <div key={d} className="text-xs text-gray-400 font-medium py-1">{d}</div>
-              ))}
+              {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => <div key={d} className="text-xs text-gray-400 font-medium py-1">{d}</div>)}
             </div>
-            <div className="grid grid-cols-7 gap-1">
-              {renderCalendar()}
-            </div>
-            {/* Kingdom usage summary */}
+            <div className="grid grid-cols-7 gap-1">{renderCalendar()}</div>
             <div className="mt-4 bg-purple-50 rounded p-3">
               <div className="flex justify-between items-center">
                 <div>
-                  <p className="text-sm font-medium text-purple-800">
-                    {kingdomDays.length} usage day{kingdomDays.length !== 1 ? 's' : ''}
-                  </p>
+                  <p className="text-sm font-medium text-purple-800">{kingdomDays.length} usage day{kingdomDays.length !== 1 ? 's' : ''}</p>
                   <p className="text-xs text-purple-600 mt-0.5">
                     {kingdomDays.length} &times; &pound;{billingConfig ? parseFloat(billingConfig.kingdom_addon_daily).toFixed(2) : '—'}/day
-                    {billingConfig && kingdomDays.length * parseFloat(billingConfig.kingdom_addon_daily) >= parseFloat(billingConfig.kingdom_addon_monthly) && (
-                      <span className="ml-1">(capped at monthly rate)</span>
-                    )}
+                    {billingConfig && kingdomDays.length * parseFloat(billingConfig.kingdom_addon_daily) >= parseFloat(billingConfig.kingdom_addon_monthly) && <span className="ml-1">(capped at monthly rate)</span>}
                   </p>
                 </div>
-                <p className="text-lg font-bold text-purple-700">
-                  &pound;{kingdomCharge !== null ? kingdomCharge.toFixed(2) : '—'}
-                </p>
+                <p className="text-lg font-bold text-purple-700">&pound;{kingdomCharge !== null ? kingdomCharge.toFixed(2) : '—'}</p>
               </div>
             </div>
           </div>
@@ -213,32 +201,20 @@ export default function ClientDetail() {
         {editingClient ? (
           <form onSubmit={saveClient} className="bg-white p-4 rounded-lg shadow mt-2">
             <div className="grid grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs font-medium mb-1">Name *</label>
-                <input value={clientForm.name} onChange={e => setClientForm({ ...clientForm, name: e.target.value })} required className="w-full border rounded px-3 py-2 text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium mb-1">Contact Email</label>
-                <input type="email" value={clientForm.contact_email} onChange={e => setClientForm({ ...clientForm, contact_email: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium mb-1">Billing Contact</label>
-                <input value={clientForm.billing_contact} onChange={e => setClientForm({ ...clientForm, billing_contact: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" />
-              </div>
+              <div><label className="block text-xs font-medium mb-1">Name *</label><input value={clientForm.name} onChange={e => setClientForm({ ...clientForm, name: e.target.value })} required className="w-full border rounded px-3 py-2 text-sm" /></div>
+              <div><label className="block text-xs font-medium mb-1">Contact Email</label><input type="email" value={clientForm.contact_email} onChange={e => setClientForm({ ...clientForm, contact_email: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" /></div>
+              <div><label className="block text-xs font-medium mb-1">Billing Contact</label><input value={clientForm.billing_contact} onChange={e => setClientForm({ ...clientForm, billing_contact: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" /></div>
             </div>
             <div className="mt-3 flex gap-2">
               <button type="submit" className="bg-blue-600 text-white px-4 py-1.5 rounded text-sm">Save</button>
-              <button type="button" onClick={() => setEditingClient(false)} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+              <button type="button" onClick={() => setEditingClient(false)} className="text-sm text-gray-500">Cancel</button>
             </div>
           </form>
         ) : (
           <div className="flex items-start justify-between mt-2">
             <div>
               <h2 className="text-xl font-bold">{client.name}</h2>
-              <p className="text-sm text-gray-500">
-                {client.contact_email}
-                {client.billing_contact && <span> &middot; Billing: {client.billing_contact}</span>}
-              </p>
+              <p className="text-sm text-gray-500">{client.contact_email}{client.billing_contact && <span> &middot; Billing: {client.billing_contact}</span>}</p>
             </div>
             <button onClick={startEditClient} className="text-sm text-blue-600 hover:underline">Edit</button>
           </div>
@@ -248,10 +224,7 @@ export default function ClientDetail() {
       {/* Tabs */}
       <div className="flex gap-2 mb-4">
         {['users', 'projects', 'billing'].map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 rounded text-sm font-medium capitalize ${tab === t ? 'bg-gray-900 text-white' : 'bg-white border hover:bg-gray-50'}`}>
-            {t}
-          </button>
+          <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 rounded text-sm font-medium capitalize ${tab === t ? 'bg-gray-900 text-white' : 'bg-white border hover:bg-gray-50'}`}>{t}</button>
         ))}
       </div>
 
@@ -261,14 +234,10 @@ export default function ClientDetail() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="text-left px-4 py-3 font-medium">Name</th>
-                <th className="text-left px-4 py-3 font-medium">Email</th>
-                <th className="text-left px-4 py-3 font-medium">Type</th>
-                <th className="text-left px-4 py-3 font-medium">Kingdom</th>
-                <th className="text-left px-4 py-3 font-medium">Status</th>
-                <th className="text-left px-4 py-3 font-medium">Project</th>
-                <th className="text-left px-4 py-3 font-medium">Office</th>
-                <th className="text-left px-4 py-3 font-medium">Added</th>
+                <th className="text-left px-4 py-3 font-medium">Name</th><th className="text-left px-4 py-3 font-medium">Email</th>
+                <th className="text-left px-4 py-3 font-medium">Type</th><th className="text-left px-4 py-3 font-medium">Kingdom</th>
+                <th className="text-left px-4 py-3 font-medium">Status</th><th className="text-left px-4 py-3 font-medium">Project</th>
+                <th className="text-left px-4 py-3 font-medium">Office</th><th className="text-left px-4 py-3 font-medium">Added</th>
                 <th className="text-left px-4 py-3 font-medium w-20"></th>
               </tr>
             </thead>
@@ -277,51 +246,30 @@ export default function ClientDetail() {
                 <tr key={u.id} className="bg-blue-50">
                   <td className="px-4 py-2"><input value={userForm.display_name} onChange={e => setUserForm({ ...userForm, display_name: e.target.value })} className="w-full border rounded px-2 py-1 text-sm" /></td>
                   <td className="px-4 py-2"><input value={userForm.email} onChange={e => setUserForm({ ...userForm, email: e.target.value })} className="w-full border rounded px-2 py-1 text-sm" /></td>
-                  <td className="px-4 py-2">
-                    <select value={userForm.user_type} onChange={e => setUserForm({ ...userForm, user_type: e.target.value })} className="border rounded px-2 py-1 text-sm">
-                      <option value="standard">Standard</option><option value="gpu">GPU</option>
-                    </select>
-                  </td>
+                  <td className="px-4 py-2"><select value={userForm.user_type} onChange={e => setUserForm({ ...userForm, user_type: e.target.value })} className="border rounded px-2 py-1 text-sm"><option value="standard">Standard</option><option value="gpu">GPU</option></select></td>
                   <td className="px-4 py-2 text-center"><input type="checkbox" checked={userForm.kingdom_license} onChange={e => setUserForm({ ...userForm, kingdom_license: e.target.checked })} /></td>
-                  <td className="px-4 py-2">
-                    <select value={userForm.status} onChange={e => setUserForm({ ...userForm, status: e.target.value })} className="border rounded px-2 py-1 text-sm">
-                      <option value="active">Active</option><option value="paused">Paused</option><option value="pending_removal">Pending Removal</option><option value="removed">Removed</option>
-                    </select>
-                  </td>
-                  <td className="px-4 py-2">
-                    <select value={userForm.project_id} onChange={e => setUserForm({ ...userForm, project_id: e.target.value })} className="border rounded px-2 py-1 text-sm">
-                      <option value="">None</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                  </td>
+                  <td className="px-4 py-2"><select value={userForm.status} onChange={e => setUserForm({ ...userForm, status: e.target.value })} className="border rounded px-2 py-1 text-sm"><option value="active">Active</option><option value="paused">Paused</option><option value="pending_removal">Pending Removal</option><option value="removed">Removed</option></select></td>
+                  <td className="px-4 py-2"><select value={userForm.project_id} onChange={e => setUserForm({ ...userForm, project_id: e.target.value })} className="border rounded px-2 py-1 text-sm"><option value="">None</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></td>
                   <td className="px-4 py-2 text-center"><input type="checkbox" checked={userForm.requires_office_license} onChange={e => setUserForm({ ...userForm, requires_office_license: e.target.checked })} /></td>
                   <td className="px-4 py-2 text-gray-500 text-xs">{formatDate(u.added_date)}</td>
-                  <td className="px-4 py-2">
-                    <div className="flex gap-1">
-                      <button onClick={saveUser} className="text-green-600 hover:text-green-800 text-xs font-medium">Save</button>
-                      <button onClick={() => setEditingUserId(null)} className="text-gray-400 hover:text-gray-600 text-xs">Cancel</button>
-                    </div>
-                  </td>
+                  <td className="px-4 py-2"><div className="flex gap-1"><button onClick={saveUser} className="text-green-600 text-xs font-medium">Save</button><button onClick={() => setEditingUserId(null)} className="text-gray-400 text-xs">Cancel</button></div></td>
                 </tr>
               ) : (
                 <tr key={u.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium">{u.display_name}</td>
                   <td className="px-4 py-3 text-gray-600 text-xs">{u.email}</td>
                   <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${typeColors[u.user_type] || 'bg-gray-100'}`}>{u.user_type}</span></td>
-                  <td className="px-4 py-3">
-                    {u.kingdom_license ? (
-                      <button onClick={() => openKingdomModal(u)} className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700 hover:bg-purple-200">Kingdom</button>
-                    ) : <span className="text-gray-300 text-xs">—</span>}
-                  </td>
+                  <td className="px-4 py-3">{u.kingdom_license ? <button onClick={() => openKingdomModal(u)} className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700 hover:bg-purple-200">Kingdom</button> : <span className="text-gray-300 text-xs">—</span>}</td>
                   <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[u.status]}`}>{u.status}</span></td>
                   <td className="px-4 py-3 text-gray-600 text-xs">{u.project_name || '—'}</td>
                   <td className="px-4 py-3">{u.requires_office_license ? <span className="text-green-600 text-xs font-medium">Yes</span> : <span className="text-gray-400 text-xs">No</span>}</td>
                   <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(u.added_date)}</td>
-                  <td className="px-4 py-3"><button onClick={() => startEditUser(u)} className="text-blue-600 hover:text-blue-800 text-xs">Edit</button></td>
+                  <td className="px-4 py-3"><button onClick={() => startEditUser(u)} className="text-blue-600 text-xs">Edit</button></td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {users.length === 0 && <p className="text-center py-8 text-gray-500">No users — they'll appear here when requests are actioned</p>}
+          {users.length === 0 && <p className="text-center py-8 text-gray-500">No users</p>}
         </div>
       )}
 
@@ -329,19 +277,12 @@ export default function ClientDetail() {
       {tab === 'projects' && (
         <div>
           <div className="bg-white rounded-lg shadow p-4 mb-4 flex gap-2 items-end">
-            <div className="flex-1">
-              <label className="block text-xs font-medium mb-1">New Project</label>
-              <input value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="Project name" className="w-full border rounded px-3 py-2 text-sm" />
-            </div>
+            <div className="flex-1"><label className="block text-xs font-medium mb-1">New Project</label><input value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="Project name" className="w-full border rounded px-3 py-2 text-sm" /></div>
             <button onClick={handleAddProject} className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">Add</button>
           </div>
           <div className="bg-white rounded-lg shadow overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b"><tr><th className="text-left px-4 py-3 font-medium">Project Name</th><th className="text-left px-4 py-3 font-medium">Created</th></tr></thead>
-              <tbody className="divide-y">
-                {projects.map(p => (<tr key={p.id}><td className="px-4 py-3 font-medium">{p.name}</td><td className="px-4 py-3 text-gray-500">{formatDate(p.created_at)}</td></tr>))}
-              </tbody>
-            </table>
+            <table className="w-full text-sm"><thead className="bg-gray-50 border-b"><tr><th className="text-left px-4 py-3 font-medium">Project Name</th><th className="text-left px-4 py-3 font-medium">Created</th></tr></thead>
+            <tbody className="divide-y">{projects.map(p => <tr key={p.id}><td className="px-4 py-3 font-medium">{p.name}</td><td className="px-4 py-3 text-gray-500">{formatDate(p.created_at)}</td></tr>)}</tbody></table>
             {projects.length === 0 && <p className="text-center py-8 text-gray-500">No projects yet</p>}
           </div>
         </div>
@@ -350,79 +291,92 @@ export default function ClientDetail() {
       {/* Billing tab */}
       {tab === 'billing' && (
         <div>
-          {/* Month/year selector */}
+          {/* Month selector */}
           <div className="bg-white p-4 rounded-lg shadow mb-6 flex gap-4 items-end">
-            <div>
-              <label className="block text-xs font-medium mb-1">Month</label>
+            <div><label className="block text-xs font-medium mb-1">Month</label>
               <select value={billMonth} onChange={e => setBillMonth(parseInt(e.target.value))} className="border rounded px-3 py-2 text-sm">
-                {Array.from({ length: 12 }, (_, i) => (
-                  <option key={i + 1} value={i + 1}>{new Date(2000, i).toLocaleString('en-GB', { month: 'long' })}</option>
-                ))}
+                {Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{new Date(2000, i).toLocaleString('en-GB', { month: 'long' })}</option>)}
               </select>
             </div>
-            <div>
-              <label className="block text-xs font-medium mb-1">Year</label>
+            <div><label className="block text-xs font-medium mb-1">Year</label>
               <select value={billYear} onChange={e => setBillYear(parseInt(e.target.value))} className="border rounded px-3 py-2 text-sm">
-                {Array.from({ length: 5 }, (_, i) => {
-                  const y = now.getFullYear() - 2 + i;
-                  return <option key={y} value={y}>{y}</option>;
-                })}
+                {Array.from({ length: 5 }, (_, i) => { const y = now.getFullYear() - 2 + i; return <option key={y} value={y}>{y}</option>; })}
               </select>
             </div>
-            <button onClick={handleGenerateBill} className="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700">
-              Generate Bill
-            </button>
+            <button onClick={handlePreviewBill} className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">Preview Bill</button>
           </div>
 
-          {/* Active bill (generated or selected from history) */}
+          {/* Active bill (preview or saved) */}
           {activeBill && (
             <div className="bg-white rounded-lg shadow p-4 mb-6">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold">
-                  {activeBill.period_start} to {activeBill.period_end}
-                  {generatedPreview && <span className="ml-2 text-xs text-green-600 font-normal">Saved</span>}
-                </h3>
+                <div>
+                  <h3 className="font-bold">{activeBill.period_start} to {activeBill.period_end}</h3>
+                  {billPreview && <span className="text-xs text-amber-600 font-medium">Preview — not yet saved</span>}
+                  {selectedPeriod && <span className="text-xs text-green-600 font-medium">Saved</span>}
+                </div>
                 <span className="text-lg font-bold text-green-700">&pound;{parseFloat(activeBill.total).toFixed(2)}</span>
               </div>
+
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr>
                     <th className="text-left px-4 py-2 font-medium">User</th>
                     <th className="text-left px-4 py-2 font-medium">Type</th>
+                    <th className="text-left px-4 py-2 font-medium">Active Period</th>
                     <th className="text-left px-4 py-2 font-medium">Days</th>
-                    <th className="text-left px-4 py-2 font-medium">Seat</th>
-                    <th className="text-left px-4 py-2 font-medium">Kingdom</th>
-                    <th className="text-left px-4 py-2 font-medium">Setup</th>
+                    <th className="text-left px-4 py-2 font-medium">Seat Charge</th>
+                    <th className="text-left px-4 py-2 font-medium">Kingdom Days</th>
+                    <th className="text-left px-4 py-2 font-medium">Kingdom Charge</th>
+                    <th className="text-left px-4 py-2 font-medium">Setup Fee</th>
                     <th className="text-left px-4 py-2 font-medium">Total</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {(activeBill.line_items || []).map((item, i) => (
-                    <tr key={i}>
-                      <td className="px-4 py-2">
-                        {item.display_name}
-                        {item.kingdom_license && <span className="ml-1 text-xs text-purple-600">[K]</span>}
-                      </td>
-                      <td className="px-4 py-2"><span className={`px-2 py-0.5 rounded text-xs font-medium ${typeColors[item.user_type]}`}>{item.user_type}</span></td>
-                      <td className="px-4 py-2">
-                        {item.days_active}
-                        {item.kingdom_usage_days > 0 && <span className="text-purple-600 text-xs ml-1">({item.kingdom_usage_days}K)</span>}
-                      </td>
-                      <td className="px-4 py-2">&pound;{(item.charges.standard || item.charges.gpu || 0).toFixed(2)}</td>
-                      <td className="px-4 py-2">{item.charges.kingdom_addon ? `\u00A3${item.charges.kingdom_addon.toFixed(2)}` : '—'}</td>
-                      <td className="px-4 py-2">{item.charges.setup_fee ? `\u00A3${item.charges.setup_fee.toFixed(2)}` : '—'}</td>
-                      <td className="px-4 py-2 font-medium">&pound;{item.total.toFixed(2)}</td>
-                    </tr>
-                  ))}
+                  {activeBillItems.map((item, i) => {
+                    const seat = getSeatCharge(item);
+                    const kingdom = getKingdomCharge(item);
+                    return (
+                      <tr key={i}>
+                        <td className="px-4 py-2 font-medium">{item.display_name}</td>
+                        <td className="px-4 py-2"><span className={`px-2 py-0.5 rounded text-xs font-medium ${typeColors[item.user_type]}`}>{item.user_type}</span></td>
+                        <td className="px-4 py-2 text-xs text-gray-600">{item.active_period || '—'}</td>
+                        <td className="px-4 py-2">{item.days_active}</td>
+                        <td className="px-4 py-2">
+                          &pound;{seat.amount.toFixed(2)}
+                          {seat.rate_applied && <span className="text-xs text-gray-400 ml-1">({seat.rate_applied})</span>}
+                        </td>
+                        <td className="px-4 py-2">{kingdom?.days || '—'}</td>
+                        <td className="px-4 py-2">
+                          {kingdom ? (
+                            <span>&pound;{kingdom.amount.toFixed(2)}{kingdom.rate_applied && <span className="text-xs text-gray-400 ml-1">({kingdom.rate_applied})</span>}</span>
+                          ) : '—'}
+                        </td>
+                        <td className="px-4 py-2">{item.charges.setup_fee ? `\u00A3${item.charges.setup_fee.toFixed(2)}` : '—'}</td>
+                        <td className="px-4 py-2 font-medium">&pound;{item.total.toFixed(2)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
+                <tfoot className="border-t bg-gray-50">
+                  {stdTotal > 0 && <tr><td colSpan={8} className="px-4 py-1.5 text-xs text-gray-500 text-right">Standard subtotal</td><td className="px-4 py-1.5 text-sm font-medium">&pound;{stdTotal.toFixed(2)}</td></tr>}
+                  {gpuTotal > 0 && <tr><td colSpan={8} className="px-4 py-1.5 text-xs text-gray-500 text-right">GPU subtotal</td><td className="px-4 py-1.5 text-sm font-medium">&pound;{gpuTotal.toFixed(2)}</td></tr>}
+                  <tr><td colSpan={8} className="px-4 py-2 text-sm font-bold text-right">Grand Total</td><td className="px-4 py-2 text-sm font-bold">&pound;{parseFloat(activeBill.total).toFixed(2)}</td></tr>
+                </tfoot>
               </table>
-              <div className="mt-4 flex justify-end">
+
+              <div className="mt-4 flex justify-between items-center">
+                <div className="flex gap-2">
+                  {billPreview && <button onClick={handleSaveBill} className="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700">Save Bill</button>}
+                  {selectedPeriod && !selectedPeriod.sent_at && <button onClick={() => handleMarkSent(selectedPeriod.id)} className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">Mark as Sent</button>}
+                  {selectedPeriod?.sent_at && <span className="text-sm text-gray-500">Sent: {formatDate(selectedPeriod.sent_at, true)}</span>}
+                </div>
                 <button onClick={() => exportCSV(activeBill)} className="text-sm text-blue-600 hover:underline">Export CSV</button>
               </div>
             </div>
           )}
 
-          {/* Past billing periods */}
+          {/* Saved billing periods */}
           <h3 className="font-bold mb-3">Saved Billing Periods</h3>
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <table className="w-full text-sm">
@@ -431,22 +385,26 @@ export default function ClientDetail() {
                   <th className="text-left px-4 py-3 font-medium">Period</th>
                   <th className="text-left px-4 py-3 font-medium">Total</th>
                   <th className="text-left px-4 py-3 font-medium">Generated</th>
+                  <th className="text-left px-4 py-3 font-medium">Sent</th>
+                  <th className="text-left px-4 py-3 font-medium">Client Approved</th>
                   <th className="text-left px-4 py-3 font-medium"></th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {billing.map(b => (
                   <tr key={b.id} className={`hover:bg-gray-50 cursor-pointer ${selectedPeriod?.id === b.id ? 'bg-blue-50' : ''}`}
-                    onClick={() => { setSelectedPeriod(b); setGeneratedPreview(null); }}>
+                    onClick={() => { setSelectedPeriod(b); setBillPreview(null); }}>
                     <td className="px-4 py-3">{formatDate(b.period_start)} — {formatDate(b.period_end)}</td>
                     <td className="px-4 py-3 font-medium">&pound;{parseFloat(b.total).toFixed(2)}</td>
-                    <td className="px-4 py-3 text-gray-500">{formatDate(b.generated_at, true)}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(b.generated_at, true)}</td>
+                    <td className="px-4 py-3 text-xs">{b.sent_at ? <span className="text-green-600">{formatDate(b.sent_at, true)}</span> : <span className="text-gray-400">Not sent</span>}</td>
+                    <td className="px-4 py-3 text-xs">{b.client_approved ? <span className="text-green-600 font-medium">Yes ({formatDate(b.client_approved_at)})</span> : <span className="text-gray-400">No</span>}</td>
                     <td className="px-4 py-3 text-blue-600 text-sm">View</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {billing.length === 0 && <p className="text-center py-8 text-gray-500">No billing periods generated</p>}
+            {billing.length === 0 && <p className="text-center py-8 text-gray-500">No billing periods saved</p>}
           </div>
         </div>
       )}
@@ -454,25 +412,20 @@ export default function ClientDetail() {
   );
 }
 
-function exportCSV(period) {
-  const items = period.line_items || [];
-  const lines = ['User,Type,Kingdom,Days Active,Kingdom Days,Seat Charge,Kingdom Charge,Setup Fee,Total'];
+function exportCSV(bill) {
+  const items = bill.line_items || [];
+  const lines = ['User,Type,Active Period,Days,Seat Charge,Kingdom Days,Kingdom Charge,Setup Fee,Total'];
   for (const item of items) {
-    lines.push([
-      item.display_name, item.user_type, item.kingdom_license ? 'Yes' : 'No',
-      item.days_active, item.kingdom_usage_days || 0,
-      (item.charges.standard || item.charges.gpu || 0).toFixed(2),
-      (item.charges.kingdom_addon || 0).toFixed(2),
-      (item.charges.setup_fee || 0).toFixed(2),
-      item.total.toFixed(2),
-    ].join(','));
+    const seat = item.charges.seat || { amount: item.charges.standard || item.charges.gpu || 0 };
+    const kingdom = item.charges.kingdom || (item.charges.kingdom_addon ? { amount: item.charges.kingdom_addon, days: item.kingdom_usage_days } : null);
+    lines.push([item.display_name, item.user_type, item.active_period || '', item.days_active,
+      seat.amount.toFixed(2), kingdom?.days || 0, kingdom ? kingdom.amount.toFixed(2) : '0.00',
+      (item.charges.setup_fee || 0).toFixed(2), item.total.toFixed(2)].join(','));
   }
-  lines.push(`,,,,,,,,${parseFloat(period.total).toFixed(2)}`);
+  lines.push(`,,,,,,,,${parseFloat(bill.total).toFixed(2)}`);
   const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `billing-${period.period_start}-${period.period_end}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  const a = document.createElement('a'); a.href = url;
+  a.download = `billing-${bill.period_start}-${bill.period_end}.csv`;
+  a.click(); URL.revokeObjectURL(url);
 }

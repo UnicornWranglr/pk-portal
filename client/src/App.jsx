@@ -13,6 +13,7 @@ import KingdomImport from './pages/admin/KingdomImport';
 import DataImport from './pages/admin/DataImport';
 import PortalUsers from './pages/portal/Users';
 import PortalRequests from './pages/portal/Requests';
+import PortalBilling from './pages/portal/Billing';
 
 function RequireAuth({ role, children }) {
   const { user } = useAuth();
@@ -53,6 +54,7 @@ export default function App() {
             <Route index element={<Navigate to="users" />} />
             <Route path="users" element={<PortalUsers />} />
             <Route path="requests" element={<PortalRequests />} />
+            <Route path="billing" element={<PortalBilling />} />
           </Route>
 
           {/* Catch-all */}

@@ -101,6 +101,29 @@ pk-portal/
 
 ## Changelog
 
+### v2.0.0 — Full Rewrite: Billing, Requests & Portal
+- **Billing engine rewrite**: preview/save split, correct day calculation using
+  MAX(added_date, period_start) to MIN(removed_date, period_end) inclusive,
+  fair-use logic showing daily vs monthly rate applied, active period text,
+  setup fee atomic check with SELECT FOR UPDATE, paused users excluded
+- **Request effective dates**: admin picks the actual date a change takes effect
+  (not always the approval date), stored on request record
+- **Remove = removed**: approved removal requests now set status='removed' and
+  removed_date (not pending_removal), billing uses removed_date as boundary
+- **Move Project requests**: new request type for reassigning users between projects
+- **Preview/Save billing flow**: generate shows preview, explicit Save Bill button,
+  Mark as Sent tracking, client approval status
+- **Client billing portal**: new /portal/billing page, clients can view bills and
+  approve them
+- **Kingdom import — current month only**: filters to current calendar month,
+  replaces on re-import, verification summary with per-user charge breakdown
+- **Unbilled months**: dashboard card + sidebar badge showing clients missing
+  last month's bill
+- **Historical billing cleared**: migration truncates billing_periods table
+- **Dashboard**: unbilled months card, client approval status in overview
+- **Line items**: active period text (e.g. "15 Mar – 31 Mar"), rate applied label,
+  subtotals by user type, grand total
+
 ### v1.5.0 — Patch Run 4: Dashboard, Billing & UX
 - Admin dashboard as default landing page (summary cards, activity feed, client overview)
 - Pending requests count badge on sidebar nav item (polls every 30s)
